@@ -1,0 +1,87 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Mps CICD Pipeline
+
+on:
+  push:
+    branches: ["master"]
+  pull_request:
+    branches: ["master"]
+  release:
+    branches: ["master"]
+    types: [published]
+
+jobs:
+  build:
+    if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15.2
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: rxdomain
+        ports:
+          - 5432:5432
+      redis:
+        image: redis:6.2.12-alpine
+        ports:
+          - 6379:6379
+      zookeeper:
+        image: "bitnami/zookeeper:3.8"
+        ports:
+          - "2181:2181"
+        env:
+          ALLOW_ANONYMOUS_LOGIN: yes
+        options: >-
+          --health-cmd "echo mntr | nc -w 2 -q 2 localhost 2181"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      kafka:
+        image: "bitnami/kafka:2.8"
+        ports:
+          - "9092:9092"
+        env:
+          KAFKA_CFG_LISTENERS: PLAINTEXT://:9092
+          KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092
+          KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
+          ALLOW_PLAINTEXT_LISTENER: yes
+          KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: true
+        options: >-
+          --health-cmd "kafka-topics.sh --list --bootstrap-server localhost:9092"
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 5
+          --restart always
+      elasticsearch:
+        image: "elasticsearch:7.10.1"
+        env:
+          discovery.type: single-node
+          cluster.name: docker-cluster
+        ports:
+          - "9200:9200"
+          - "9300:9300"
+        options: >-
+          --health-cmd "curl -u http://localhost:9200/_cluster/health?wait_for_status=green&timeout=10s"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 5
+    steps:
+      - uses: szenius/set-timezone@v1.2
+        with:
+          timezoneLinux: "Asia/Shanghai"
+      - uses: actions/checkout@v3
+      - name: Run workflow
+        run: |
+          chmod +x ./run_workflow.sh
+          ./run_workflow.sh
+        env:
+          REDIS_HOST: localhost:6379
+          DATASOURCE: postgres://postgres:postgres@localhost:5432/rxdomain?sslmode=disable
+          WORKFLOW_TEST_DATASOURCE: postgres://postgres:postgres@localhost:5432/rxdomain?sslmode=disable
+          ENV: cicd
+          MPS_AES_KEY: ${{ secrets.MPS_AES_KEY }}
+          MPS_AES_IV: ${{ secrets.MPS_AES_IV }}
