@@ -1,7 +1,7 @@
 use crate::utils::look_up;
 use k8s_openapi::api::core::v1::Endpoints;
 use kube::Api;
-use std::str::FromStr;
+use std::{str::FromStr, fmt};
 use tokio::io;
 use tonic::transport;
 
@@ -192,6 +192,18 @@ pub enum TargetError {
     Io(io::Error),
     Unknown,
     Unavailable,
+}
+
+impl fmt::Display for TargetError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            TargetError::Transport(err) => write!(f, "transport error: {}", err),
+            TargetError::K8S(err) => write!(f, "k8s error: {}", err),
+            TargetError::Io(err) => write!(f, "io error: {}", err),
+            TargetError::Unknown => write!(f, "unknown target"),
+            TargetError::Unavailable => write!(f, "unavailable target"),
+        }
+    }
 }
 
 #[cfg(test)]
