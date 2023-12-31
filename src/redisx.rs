@@ -108,6 +108,18 @@ impl Redis {
     ) -> Result<Vec<F>, RedisError> {
         self.inner.hkeys(key).await
     }
+
+    pub async fn hset_multiple<
+        K: ToRedisArgs + Send + Sync,
+        F: ToRedisArgs + Send + Sync,
+        V: ToRedisArgs + Send + Sync,
+    >(
+        &mut self,
+        key: K,
+        items: &[(F, V)],
+    ) -> Result<(), RedisError> {
+        self.inner.hset_multiple(key, items).await
+    }
 }
 
 impl RedisConf {
