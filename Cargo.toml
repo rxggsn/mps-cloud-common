@@ -40,6 +40,7 @@ postgres-types = { version = "0.2.5", optional = true }
 
 kube = { version = "0.85.0", features = ["runtime", "derive"], optional = true }
 k8s-openapi = { version = "0.19.0", features = ["v1_27"], optional = true }
+tower = { version = "0.4.13", optional = true }
 
 [dependencies.uuid]
 version = "1.2.1"
@@ -58,7 +59,7 @@ version = "0.14.14"
 optional = true
 
 [dependencies.tower-service]
-version = "0.3"
+version = "0.3.2"
 optional = true
 
 
@@ -68,7 +69,15 @@ kafkax = ["rdkafka", "futures"]
 redisx = ["redis"]
 elasticx = ["elasticsearch"]
 logx = ["tracing-subscriber"]
-rpcx = ["http", "hyper", "tower-service", "kube", "k8s-openapi", "futures"]
+rpcx = [
+    "http",
+    "hyper",
+    "tower-service",
+    "kube",
+    "k8s-openapi",
+    "futures",
+    "tower",
+]
 full = ["kafkax", "redisx", "elasticx", "rpcx", "pgx"]
 default = []
 
