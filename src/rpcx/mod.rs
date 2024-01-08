@@ -44,14 +44,14 @@ fn set_trace_id<T>(trace_id: &Option<String>, request: &mut RpcRequest<T>) {
 
 pub struct Context<'a> {
     pub trace_id: &'a Option<String>,
-    pub podname: Option<&'a str>,
+    pub podname: Option<String>,
 }
 
 impl<'a> Clone for Context<'a> {
     fn clone(&self) -> Self {
         Self {
             trace_id: self.trace_id,
-            podname: self.podname,
+            podname: self.podname.clone(),
         }
     }
 }
@@ -74,7 +74,7 @@ impl<'a> Context<'a> {
         });
     }
 
-    pub fn set_host(&mut self, host: &'a str) {
-        self.podname = Some(host);
+    pub fn set_host<'b>(&mut self, host: &'b str) {
+        self.podname = Some(host.to_string());
     }
 }
