@@ -44,14 +44,14 @@ fn set_trace_id<T>(trace_id: &Option<String>, request: &mut RpcRequest<T>) {
 
 pub struct Context<'a> {
     pub trace_id: &'a Option<String>,
-    pub podname: Option<String>,
+    pub host: Option<String>,
 }
 
 impl<'a> Clone for Context<'a> {
     fn clone(&self) -> Self {
         Self {
             trace_id: self.trace_id,
-            podname: self.podname.clone(),
+            host: self.host.clone(),
         }
     }
 }
@@ -60,13 +60,13 @@ impl<'a> Context<'a> {
     pub fn new(trace_id: &'a Option<String>) -> Self {
         Self {
             trace_id,
-            podname: None,
+            host: None,
         }
     }
 
     pub fn set_metadata<T>(&self, request: &mut RpcRequest<T>) {
         set_trace_id(self.trace_id, request);
-        self.podname.iter().for_each(|host| {
+        self.host.iter().for_each(|host| {
             request.metadata_mut().insert(
                 HOST.as_str(),
                 (*host).parse().expect("set host into metadata is failed"),
@@ -75,6 +75,6 @@ impl<'a> Context<'a> {
     }
 
     pub fn set_host<'b>(&mut self, host: &'b str) {
-        self.podname = Some(host.to_string());
+        self.host = Some(host.to_string());
     }
 }

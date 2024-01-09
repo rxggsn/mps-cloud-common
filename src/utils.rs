@@ -1,6 +1,12 @@
-use std::{ffi::OsStr, net::ToSocketAddrs, time::Duration};
+use std::{
+    ffi::OsStr,
+    net::{ToSocketAddrs, UdpSocket},
+    time::Duration,
+};
 
 use tokio::{io, net::lookup_host};
+
+use crate::LOCAL_IP;
 
 const BASE_BACKOFF_TIME: Duration = Duration::from_millis(300);
 pub const MAX_BACKOFF_TIMES: u32 = 3;
@@ -27,6 +33,34 @@ pub async fn look_up(dst: String) -> Result<Option<std::net::SocketAddr>, io::Er
     Ok(match lookup_host(dst).await?.next() {
         Some(addr) => addr.to_socket_addrs()?.next(),
         None => None,
+    })
+}
+
+pub fn local_ip() -> Option<String> {
+    LOCAL_IP.with(|unsafe_ip| {
+        let ip = unsafe { (*unsafe_ip.get()).clone() };
+        if ip.is_empty() {
+            let socket = match UdpSocket::bind("0.0.0.0:0") {
+                Ok(s) => s,
+                Err(_) => return None,
+            };
+
+            match socket.connect("8.8.8.8:80") {
+                Ok(()) => (),
+                Err(_) => return None,
+            };
+
+            match socket.local_addr() {
+                Ok(addr) => {
+                    let localip = addr.ip().to_string();
+                    unsafe { *unsafe_ip.get() = localip.clone() };
+                    Some(localip)
+                }
+                Err(_) => None,
+            }
+        } else {
+            Some(ip)
+        }
     })
 }
 
@@ -243,17 +277,20 @@ pub fn exponential_backoff(times: u32) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
+    use std::{env, thread};
 
-    use crate::utils::codec::{
-        bcd_to_i32, bcd_to_u16, bcd_to_u32, bcd_to_u64, hex_to_i32, hex_to_u32, hex_to_u64,
-        u64_to_hex,
+    use crate::{
+        utils::codec::{
+            bcd_to_i32, bcd_to_u16, bcd_to_u32, bcd_to_u64, hex_to_i32, hex_to_u32, hex_to_u64,
+            u64_to_hex,
+        },
+        LOCAL_IP,
     };
 
     use super::{
         codec::{hex_string_as_slice, hex_to_u16, u16_to_bcd, u64_to_bcd},
         conf::replace_by_env,
-        hostname,
+        hostname, look_up,
     };
 
     #[test]
@@ -377,5 +414,40 @@ mod tests {
     fn test_u64_to_hex() {
         let r = u64_to_hex(255 as u64);
         assert_eq!(r, [0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00])
+    }
+
+    #[tokio::test]
+    async fn test_lookup() {
+        let addr = look_up("localhost:80".to_string()).await.unwrap();
+        assert!(addr.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_local_ip() {
+        let ip = super::local_ip();
+        assert!(ip.is_some());
+        println!("{}", ip.unwrap_or_default());
+
+        LOCAL_IP.with(|ip| unsafe {
+            assert!(!(*ip.get()).clone().is_empty());
+        });
+
+        let handler = tokio::spawn(async {
+            LOCAL_IP.with(|ip| unsafe {
+                assert!(!(*ip.get()).clone().is_empty());
+            });
+        });
+
+        let handler_1 = thread::spawn(|| {
+            LOCAL_IP.with(|ip| unsafe {
+                assert!((*ip.get()).clone().is_empty());
+            });
+        });
+
+        let ip = super::local_ip();
+        assert!(ip.is_some());
+        println!("{}", ip.unwrap_or_default());
+        handler.await.expect("msg");
+        handler_1.join().expect("msg");
     }
 }

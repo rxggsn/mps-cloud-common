@@ -1,4 +1,7 @@
+use std::cell::UnsafeCell;
+
 pub mod checksum;
+pub mod concurrency;
 pub mod crypto;
 #[cfg(feature = "elasticx")]
 pub mod elasticx;
@@ -17,7 +20,6 @@ pub mod rpcx;
 pub mod socketx;
 pub mod times;
 pub mod utils;
-pub mod concurrency;
 
 #[derive(serde::Deserialize, Clone, PartialEq, Eq, Debug)]
 pub enum Env {
@@ -43,3 +45,8 @@ impl Env {
 pub const LOG_TRACE_ID: &str = "X-Trace-Id";
 pub const GRPC_TRACE_ID: &str = "x-trace-id";
 pub const SPAN_TRACE_ID: &str = "trace_id";
+
+thread_local! {
+    pub static LOCAL_IP_NUM: UnsafeCell<i32> = UnsafeCell::new(0);
+    pub static LOCAL_IP: UnsafeCell<String> = UnsafeCell::new("".to_string());
+}
