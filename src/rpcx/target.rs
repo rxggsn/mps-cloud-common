@@ -14,7 +14,7 @@ use tokio::{
 use tonic::transport;
 use tower::discover::Change;
 
-use super::{client::MpsCloudChannel, PodName, PodUid, DEFAULT_BUFFER_SIZE};
+use super::{client::ControlPlane, PodName, PodUid, DEFAULT_BUFFER_SIZE};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Target {
@@ -39,7 +39,7 @@ pub enum Target {
 }
 
 impl Target {
-    pub async fn connect(&self) -> Result<MpsCloudChannel, TargetError> {
+    pub async fn connect(&self) -> Result<ControlPlane, TargetError> {
         match self {
             Target::Http(endpoint) => {
                 let channel = transport::Endpoint::new(endpoint.clone())
@@ -48,7 +48,7 @@ impl Target {
                     .await
                     .map_err(|err| TargetError::Transport(err))?;
 
-                Ok(MpsCloudChannel::Single(channel))
+                Ok(ControlPlane::Single(channel))
             }
             Target::LB {
                 namespace,
@@ -66,7 +66,7 @@ impl Target {
                 watcher
                     .watch_pod_change(change_tx)
                     .await
-                    .map(|_| MpsCloudChannel::Single(channel))
+                    .map(|_| ControlPlane::Single(channel))
             }
             Target::DNS {
                 namespace,
@@ -89,7 +89,7 @@ impl Target {
                         .map_err(|err| TargetError::Transport(err))?
                         .connect()
                         .await
-                        .map(|channel| MpsCloudChannel::Single(channel))
+                        .map(|channel| ControlPlane::Single(channel))
                         .map_err(|err| TargetError::Transport(err)),
                     None => Err(TargetError::Unknown),
                 }
@@ -111,7 +111,7 @@ impl Target {
                 watcher
                     .watch_pod_change(change_tx)
                     .await
-                    .map(|replicas| MpsCloudChannel::new_cluster(replicas, change_rx))
+                    .map(|replicas| ControlPlane::new_cluster(replicas, change_rx))
             }
         }
     }

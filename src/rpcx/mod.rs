@@ -19,6 +19,7 @@ pub mod client;
 pub mod err;
 pub mod server;
 pub mod target;
+pub mod stream;
 
 const MPS_STATUS_CODE: &str = "999";
 const DEFAULT_BUFFER_SIZE: usize = 1024;

@@ -41,8 +41,20 @@ where
     }
 }
 
+// Mps cloud plans to support three kinds of control planes:
+// 1. Single: an single channel, it may be one node's gRPC connection or a load balancer.
+// 2. Cluster: multiple channels, which represents a statefulset.
+// 3. Lease: lease also represents a statefulset, but it has a leader pod and follower pods in a lease duration.
+// -----------------
+// Routing Rules:
+// 1. Single: request routing will be handled by gRPC channel or load balancer.
+// 2. Cluster: 
+//     [1] if request has a host header, then it will be routed to the specified pod.
+//     [2] otherwise it will be routed to the first available node chosen by load balancer.
+//     [3] if ready pod number < total pods number / 2, request will be not ready for routing.
+// 3. Lease: request will be routed to the leader pod.
 #[derive(Clone, Debug)]
-pub enum MpsCloudChannel {
+pub enum ControlPlane {
     Single(transport::Channel),
     Cluster {
         cluster: BTreeMap<PodName, transport::Channel>,
@@ -53,7 +65,7 @@ pub enum MpsCloudChannel {
     },
 }
 
-impl Service<http::Request<BoxBody>> for MpsCloudChannel {
+impl Service<http::Request<BoxBody>> for ControlPlane {
     type Response = http::Response<Body>;
     type Error = transport::Error;
     type Future = ResponseFuture;
@@ -64,8 +76,8 @@ impl Service<http::Request<BoxBody>> for MpsCloudChannel {
     ) -> std::task::Poll<Result<(), Self::Error>> {
         self.update_cluster_status();
         match self {
-            MpsCloudChannel::Single(channel) => channel.poll_ready(cx),
-            MpsCloudChannel::Cluster {
+            ControlPlane::Single(channel) => channel.poll_ready(cx),
+            ControlPlane::Cluster {
                 ready_num,
                 replicas,
                 ..
@@ -81,8 +93,8 @@ impl Service<http::Request<BoxBody>> for MpsCloudChannel {
 
     fn call(&mut self, req: http::Request<BoxBody>) -> Self::Future {
         match self {
-            MpsCloudChannel::Single(channel) => channel.call(req),
-            MpsCloudChannel::Cluster { cluster, .. } => match req.headers().get(HOST) {
+            ControlPlane::Single(channel) => channel.call(req),
+            ControlPlane::Cluster { cluster, .. } => match req.headers().get(HOST) {
                 Some(host) => {
                     let podname = host.to_str().unwrap();
                     if let Some(entry) = cluster.get_mut(podname) {
@@ -97,13 +109,13 @@ impl Service<http::Request<BoxBody>> for MpsCloudChannel {
     }
 }
 
-impl MpsCloudChannel {
+impl ControlPlane {
     pub fn new_cluster(replicas: usize, change_rx: Receiver<Change<PodName, Endpoint>>) -> Self {
         let cluster = BTreeMap::new();
         let latest_change_events = Arc::new(SkipMap::default());
         let cloned_change_events = latest_change_events.clone();
         tokio::spawn(Self::watch_replica_change(change_rx, cloned_change_events));
-        MpsCloudChannel::Cluster {
+        ControlPlane::Cluster {
             cluster,
             ready_num: 0,
             latest_change_events,
@@ -114,8 +126,8 @@ impl MpsCloudChannel {
 
     fn update_cluster_status(&mut self) {
         match self {
-            MpsCloudChannel::Single(_) => {}
-            MpsCloudChannel::Cluster {
+            ControlPlane::Single(_) => {}
+            ControlPlane::Cluster {
                 cluster,
                 ready_num,
                 latest_change_events,
@@ -169,12 +181,12 @@ mod tests {
     use tonic::transport::Endpoint;
     use tower::discover::Change;
 
-    use crate::rpcx::client::MpsCloudChannel;
+    use crate::rpcx::client::ControlPlane;
 
     #[tokio::test]
-    async fn test_cluster_channel_update_cluster_status() {
+    async fn test_cluster_control_plane_update_cluster_status() {
         let (tx, rx) = tokio::sync::mpsc::channel(10);
-        let mut cluster_channel = super::MpsCloudChannel::new_cluster(3, rx);
+        let mut cluster_channel = super::ControlPlane::new_cluster(3, rx);
 
         {
             tx.send(Change::Insert(
@@ -187,7 +199,7 @@ mod tests {
             cluster_channel.update_cluster_status();
 
             match &cluster_channel {
-                MpsCloudChannel::Cluster {
+                ControlPlane::Cluster {
                     cluster,
                     ready_num,
                     host_sets,
@@ -214,7 +226,7 @@ mod tests {
             cluster_channel.update_cluster_status();
 
             match &cluster_channel {
-                MpsCloudChannel::Cluster {
+                ControlPlane::Cluster {
                     cluster,
                     ready_num,
                     host_sets,
@@ -245,7 +257,7 @@ mod tests {
             cluster_channel.update_cluster_status();
 
             match &cluster_channel {
-                MpsCloudChannel::Cluster {
+                ControlPlane::Cluster {
                     cluster,
                     ready_num,
                     host_sets,
