@@ -1,5 +1,5 @@
 use crate::utils::look_up;
-use futures::StreamExt;
+use futures::{FutureExt, StreamExt};
 use k8s_openapi::api::core::v1::{Pod, PodStatus, Service};
 use kube::{
     api::{ListParams, WatchParams},
@@ -111,7 +111,7 @@ impl Target {
                 watcher
                     .watch_pod_change(change_tx)
                     .await
-                    .map(|replicas| ControlPlane::new_cluster(replicas, change_rx))
+                    .map(|_| ControlPlane::new_cluster(change_rx))
             }
         }
     }
