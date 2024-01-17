@@ -1,5 +1,5 @@
 use crate::utils::look_up;
-use futures::{FutureExt, StreamExt};
+use futures::StreamExt;
 use k8s_openapi::api::core::v1::{Pod, PodStatus, Service};
 use kube::{
     api::{ListParams, WatchParams},

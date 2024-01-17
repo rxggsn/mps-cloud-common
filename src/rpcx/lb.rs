@@ -18,6 +18,21 @@ use super::PodName;
 pub enum LoadBalancePolicy {
     RoundRobin { last_idx: usize },
 }
+impl LoadBalancePolicy {
+    fn get_next_pod(&mut self, replicas: usize) -> usize {
+        match self {
+            LoadBalancePolicy::RoundRobin { last_idx } => {
+                let mut next_idx = *last_idx;
+                while next_idx == *last_idx && replicas > 1 {
+                    next_idx = (next_idx + 1) % replicas;
+                }
+                last_idx.sub_assign(*last_idx);
+                last_idx.add_assign(next_idx);
+                next_idx
+            }
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct PodLoadBalancer {
@@ -28,19 +43,10 @@ pub struct PodLoadBalancer {
 
 impl PodLoadBalancer {
     pub fn call(&mut self, req: http::Request<BoxBody>) -> ResponseFuture {
-        match &mut self.policy {
-            LoadBalancePolicy::RoundRobin { last_idx } => {
-                let mut next_idx = *last_idx;
-                let replicas = self.inner.len();
-                while next_idx == *last_idx && replicas > 1 {
-                    next_idx = (*last_idx + 1) % replicas;
-                }
-                last_idx.sub_assign(*last_idx);
-                last_idx.add_assign(next_idx);
-                let pod = self.inner.get_mut(next_idx).expect("no pod is ready");
-                pod.call(req)
-            }
-        }
+        let next_idx = self.policy.get_next_pod(self.inner.len());
+
+        let pod = self.inner.get_mut(next_idx).expect("no pod is ready");
+        pod.call(req)
     }
 
     pub fn poll_ready(
@@ -87,7 +93,7 @@ impl PodLoadBalancer {
 
     pub async fn watch_replica_change(
         mut change_rx: Receiver<Change<PodName, Endpoint>>,
-        latest_change_events: Arc<SkipMap<PodName, Change<PodName, Endpoint>>>,
+        pod_change_stream: Arc<SkipMap<PodName, Change<PodName, Endpoint>>>,
     ) {
         while let Some(change) = change_rx.recv().await {
             let podname = match &change {
@@ -95,25 +101,22 @@ impl PodLoadBalancer {
                 Change::Remove(pod_name) => pod_name.clone(),
             };
 
-            latest_change_events.insert(podname, change);
+            pod_change_stream.insert(podname, change);
         }
     }
 
-    pub fn get_mut(&mut self, podname: &String) -> Option<&mut Pod> {
+    pub fn get_mut(&mut self, podname: &str) -> Option<&mut Pod> {
         self.inner.iter_mut().find(|pod| &pod.name == podname)
     }
 
     pub(crate) fn new(change_rx: Receiver<Change<PodName, Endpoint>>) -> PodLoadBalancer {
-        let latest_change_events = Arc::new(SkipMap::default());
-        let cloned_change_events = latest_change_events.clone();
-        tokio::spawn(PodLoadBalancer::watch_replica_change(
-            change_rx,
-            cloned_change_events,
-        ));
+        let pod_change_stream = Arc::new(SkipMap::default());
+        let cloned_change_stream = pod_change_stream.clone();
+        tokio::spawn(Self::watch_replica_change(change_rx, cloned_change_stream));
 
         Self {
             inner: Default::default(),
-            pod_change_stream: latest_change_events,
+            pod_change_stream,
             policy: LoadBalancePolicy::RoundRobin { last_idx: 0 },
         }
     }
@@ -128,5 +131,78 @@ pub struct Pod {
 impl Pod {
     pub fn call(&mut self, req: http::Request<BoxBody>) -> ResponseFuture {
         self.inner.call(req)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{sync::Arc, time::Duration};
+
+    use crossbeam_skiplist::SkipMap;
+    use futures::FutureExt;
+    use tokio::sync::mpsc;
+    use tonic::transport::Endpoint;
+    use tower::discover::Change;
+
+    use crate::rpcx::PodName;
+
+    use super::LoadBalancePolicy;
+
+    #[test]
+    fn test_load_balance_policy() {
+        let mut policy = LoadBalancePolicy::RoundRobin { last_idx: 0 };
+        assert_eq!(policy.get_next_pod(1), 0);
+
+        assert!(policy.get_next_pod(2) == 1);
+        match &policy {
+            LoadBalancePolicy::RoundRobin { last_idx } => assert_eq!(*last_idx, 1),
+        }
+
+        assert!(policy.get_next_pod(3) == 2);
+        match &policy {
+            LoadBalancePolicy::RoundRobin { last_idx } => assert_eq!(*last_idx, 2),
+        }
+
+        assert!(policy.get_next_pod(3) == 0);
+        match &policy {
+            LoadBalancePolicy::RoundRobin { last_idx } => assert_eq!(*last_idx, 0),
+        }
+
+        assert!(policy.get_next_pod(3) == 1);
+        match &policy {
+            LoadBalancePolicy::RoundRobin { last_idx } => assert_eq!(*last_idx, 1),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_change_event_process() {
+        let (tx, rx) = mpsc::channel(10);
+        let pod_change_stream: Arc<SkipMap<PodName, Change<PodName, Endpoint>>> =
+            Arc::new(Default::default());
+        tokio::spawn(super::PodLoadBalancer::watch_replica_change(
+            rx,
+            pod_change_stream.clone(),
+        ));
+
+        tx.send(Change::Insert(
+            "pod-0".to_string(),
+            Endpoint::from_static("http://pod-0"),
+        ))
+        .then(|_| {
+            tx.send(Change::Insert(
+                "pod-1".to_string(),
+                Endpoint::from_static("http://pod-1"),
+            ))
+        })
+        .then(|r| async {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            r
+        })
+        .await
+        .expect("msg");
+
+        assert!(pod_change_stream.len() == 2);
+        assert!(pod_change_stream.contains_key(&"pod-0".to_string()));
+        assert!(pod_change_stream.contains_key(&"pod-1".to_string()));
     }
 }

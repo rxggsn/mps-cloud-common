@@ -1,6 +1,3 @@
-use std::sync::Arc;
-
-use crossbeam_skiplist::SkipMap;
 use futures::{TryFuture, TryFutureExt};
 use http::header::HOST;
 use hyper::Body;
@@ -76,7 +73,7 @@ impl Service<http::Request<BoxBody>> for ControlPlane {
             ControlPlane::Cluster { load_balancer, .. } => match req.headers().get(HOST) {
                 Some(host) => {
                     let podname = host.to_str().unwrap();
-                    if let Some(pod) = load_balancer.get_mut(&podname.to_string()) {
+                    if let Some(pod) = load_balancer.get_mut(podname) {
                         pod.call(req)
                     } else {
                         panic!("pod {} is not ready in cluster", podname)
