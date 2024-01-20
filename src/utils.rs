@@ -4,6 +4,7 @@ use std::{
     time::Duration,
 };
 
+use rand::Rng as _;
 use tokio::{io, net::lookup_host};
 
 use crate::LOCAL_IP;
@@ -63,6 +64,18 @@ pub fn local_ip() -> Option<String> {
         }
     })
 }
+
+macro_rules! rand_number {
+    ($num_type:tt, $name:ident) => {
+        pub fn $name(left: $num_type, right: $num_type) -> $num_type {
+            rand::thread_rng().gen_range(left..right)
+        }
+    };
+}
+
+rand_number!(i16, rand_i16);
+rand_number!(i64, rand_i64);
+rand_number!(i32, rand_i32);
 
 pub mod conf {
     use std::io;
