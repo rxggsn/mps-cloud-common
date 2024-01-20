@@ -48,12 +48,13 @@ impl LoadBalancePolicy {
     }
 }
 
-// PodLoadBalance pod states consistency:
+// PodLoadBalancer pod states consistency:
 // -----------------
-// PodLoadBalance guarentee inner pod states is eventually consistent in concurrency environment.
+// PodLoadBalancer guarentee inner pod states is eventually consistent in concurrency environment.
 
 // Listener-thread-0                 |Thread-0                          | Thread-1
 // ----------------------------------|----------------------------------|----------
+//                                                                        let thread_1 = thread_0.clone()
 // // here, listener send pod change |                                  |
 // let _  = tx.send(..)                // update inner states
 //                                   | thread_0.update_pod_status()       // concurrently update inner states
