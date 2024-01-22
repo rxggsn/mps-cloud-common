@@ -148,13 +148,15 @@ impl<'a> PodWatcher<'a> {
             .boxed();
         let port = self.port.clone();
         tokio::spawn(async move {
-            let mut pending_pods = HashSet::new();
-            loop {
-                let r = stream.next().await;
-                if let Some(Ok(event)) = r {
-                    Self::handle_pod_event(&port, event, &change_tx, &mut pending_pods).await;
-                } else if let Some(Err(err)) = r {
-                    tracing::error!("watch pod error: {}", err);
+            let ref mut pending_pods = HashSet::new();
+            while let Some(event) = stream.next().await {
+                match event {
+                    Ok(event) => {
+                        Self::handle_pod_event(&port, event, &change_tx, pending_pods).await;
+                    }
+                    Err(err) => {
+                        tracing::error!("watch pod error: {}", err);
+                    }
                 }
             }
         });
