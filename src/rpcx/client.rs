@@ -46,6 +46,8 @@ where
 //     [2] otherwise it will be routed to the first available node chosen by load balancer.
 //     [3] if ready pod number < total pods number / 2, request will be not ready for routing.
 // 3. Lease: request will be routed to the leader pod.
+// ------------------
+// TODO: Lease control plane will be implemented when plan to support Raft protocol
 #[derive(Clone, Debug)]
 pub enum ControlPlane {
     Single(transport::Channel),
