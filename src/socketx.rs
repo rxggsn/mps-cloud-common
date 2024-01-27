@@ -7,7 +7,12 @@ use crate::LOG_TRACE_ID;
 
 #[async_trait]
 pub trait SocketService {
-    async fn handle(&mut self, mut conn: TcpStream, trace_id: String, span: tracing::Span) -> std::io::Result<()>;
+    async fn handle(
+        &mut self,
+        mut conn: TcpStream,
+        trace_id: String,
+        span: tracing::Span,
+    ) -> std::io::Result<()>;
 }
 
 #[derive(Clone, serde::Deserialize, Debug)]
