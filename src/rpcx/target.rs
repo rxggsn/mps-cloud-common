@@ -44,9 +44,7 @@ impl Target {
             Target::Http(endpoint) => {
                 let channel = transport::Endpoint::new(endpoint.clone())
                     .map_err(|err| TargetError::Transport(err))?
-                    .connect()
-                    .await
-                    .map_err(|err| TargetError::Transport(err))?;
+                    .connect_lazy();
 
                 Ok(ControlPlane::Single(channel))
             }
@@ -85,12 +83,11 @@ impl Target {
                     .await
                     .map_err(|err| TargetError::Io(err))?
                 {
-                    Some(endpoint) => transport::Endpoint::new(format!("http://{}", endpoint))
-                        .map_err(|err| TargetError::Transport(err))?
-                        .connect()
-                        .await
-                        .map(|channel| ControlPlane::Single(channel))
-                        .map_err(|err| TargetError::Transport(err)),
+                    Some(endpoint) => Ok(ControlPlane::Single(
+                        transport::Endpoint::new(format!("http://{}", endpoint))
+                            .map_err(|err| TargetError::Transport(err))?
+                            .connect_lazy(),
+                    )),
                     None => Err(TargetError::Unknown),
                 }
             }

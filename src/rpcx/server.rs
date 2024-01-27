@@ -7,7 +7,7 @@ use tower_service::Service;
 
 use crate::{rpcx::retrive_trace_id, GRPC_TRACE_ID, LOG_TRACE_ID};
 
-use super::{Context, RpcRequest};
+use super::RpcRequest;
 
 pub async fn create_server<S>(svc: S, addr: SocketAddr) -> Result<(), tonic::transport::Error>
 where
