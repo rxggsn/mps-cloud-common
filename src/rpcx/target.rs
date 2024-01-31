@@ -183,7 +183,7 @@ impl<'a> PodWatcher<'a> {
                 match change_tx.send(Change::Insert(pod_name, endpoint)).await {
                     Ok(_) => {
                         pending_pods.remove(&uid);
-                        tracing::debug!("insert new pod: {}", pod_ip)
+                        tracing::info!("insert new pod: {}", pod_ip)
                     }
                     Err(err) => {
                         tracing::error!("insert new pod failed: {}", err)
@@ -223,7 +223,7 @@ impl<'a> PodWatcher<'a> {
 
                 if let Some(pod_ip) = &pod.status.unwrap_or_default().pod_ip {
                     match change_tx.send(Change::Remove(pod_name)).await {
-                        Ok(_) => tracing::debug!("remove pod: {}", pod_ip),
+                        Ok(_) => tracing::info!("remove pod: {}", pod_ip),
                         Err(err) => tracing::debug!("remove pod failed: {}", err),
                     }
                 }
