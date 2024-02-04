@@ -4,6 +4,7 @@ use postgres_types::ToSql;
 use tokio::sync::RwLock;
 use tokio_postgres::{tls::NoTlsStream, Config, Connection, NoTls, Row, Socket};
 
+#[derive(Clone)]
 pub struct Postgres {
     cli: Arc<RwLock<tokio_postgres::Client>>,
 }
@@ -114,10 +115,9 @@ impl Postgres {
         stmt: &'a str,
         params: &'a [&(dyn ToSql + Sync)],
     ) -> Result<Option<T>, tokio_postgres::Error> {
-        let stmt = self.cli.read().await.prepare(stmt).await?;
-        self.cli
-            .read()
-            .await
+        let guard = self.cli.read().await;
+        let stmt = guard.prepare(stmt).await?;
+        guard
             .query_opt(&stmt, params)
             .await
             .map(|row| row.map(|r| T::from_row(&r)))
