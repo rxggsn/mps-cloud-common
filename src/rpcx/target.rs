@@ -130,9 +130,16 @@ impl<'a> PodWatcher<'a> {
         &self,
         change_tx: Sender<Change<PodName, transport::Endpoint>>,
     ) -> Result<usize, TargetError> {
-        let k8s = kube::Client::try_default()
+        let config = kube::Config::infer()
             .await
-            .map_err(|err| TargetError::K8S(err))?;
+            .map(|mut conf| {
+                conf.default_namespace = self.namespace.clone();
+                conf
+            })
+            .map_err(|err| TargetError::K8S(kube::Error::InferConfig(err)))?;
+
+        tracing::info!("k8s config: {:?}", config);
+        let k8s = kube::Client::try_from(config).map_err(|err| TargetError::K8S(err))?;
 
         let replicas = self.init(&k8s, &change_tx).await?;
 
