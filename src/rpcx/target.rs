@@ -55,10 +55,11 @@ impl Target {
             } => {
                 let (channel, change_tx) =
                     transport::Channel::balance_channel::<PodName>(DEFAULT_BUFFER_SIZE);
-                let watcher = PodWatcher {
+                let mut watcher = PodWatcher {
                     port,
                     service_name,
                     namespace,
+                    selectors: None,
                 };
 
                 watcher
@@ -99,10 +100,11 @@ impl Target {
             } => {
                 let (change_tx, change_rx) = mpsc::channel(DEFAULT_BUFFER_SIZE);
 
-                let watcher = PodWatcher {
+                let mut watcher = PodWatcher {
                     port,
                     service_name,
                     namespace,
+                    selectors: None,
                 };
 
                 watcher
@@ -118,6 +120,7 @@ struct PodWatcher<'a> {
     port: &'a Option<u16>,
     service_name: &'a String,
     namespace: &'a String,
+    selectors: Option<String>,
 }
 
 impl<'a> PodWatcher<'a> {
@@ -127,7 +130,7 @@ impl<'a> PodWatcher<'a> {
     const FAILED: &str = "Failed";
 
     async fn watch_pod_change(
-        &self,
+        &mut self,
         change_tx: Sender<Change<PodName, transport::Endpoint>>,
     ) -> Result<usize, TargetError> {
         let k8s = kube::Client::try_default()
@@ -137,7 +140,10 @@ impl<'a> PodWatcher<'a> {
         let replicas = self.init(&k8s, &change_tx).await?;
 
         let api = Api::<Pod>::namespaced(k8s, &self.namespace);
-        let wp = WatchParams::default();
+        let mut wp = WatchParams::default();
+        if let Some(selectors) = &self.selectors {
+            wp = wp.fields(&selectors);
+        }
         let mut stream = api
             .watch(&wp, "0")
             .await
@@ -233,7 +239,7 @@ impl<'a> PodWatcher<'a> {
     }
 
     async fn init(
-        &self,
+        &mut self,
         k8s: &kube::Client,
         change_tx: &Sender<Change<PodName, transport::Endpoint>>,
     ) -> Result<usize, TargetError> {
@@ -242,21 +248,21 @@ impl<'a> PodWatcher<'a> {
             .get(&self.service_name)
             .await
             .map_err(|err| TargetError::K8S(err))?;
-        let mut label = String::new();
+        let mut selectors = String::new();
         if let Some(svc_spec) = svc.spec {
             svc_spec.selector.iter().for_each(|selector| {
                 selector.iter().for_each(|(k, v)| {
-                    label.push_str(&format!("{}={},", k, v));
+                    selectors.push_str(&format!("{}={},", k, v));
                 })
             })
         } else {
             return Err(TargetError::Unavailable);
         }
 
-        label.pop();
+        selectors.pop();
         let api = Api::<Pod>::namespaced(k8s.clone(), &self.namespace);
         let pods = api
-            .list(&ListParams::default().labels(&label))
+            .list(&ListParams::default().fields(&selectors))
             .await
             .map_err(|err| TargetError::K8S(err))?;
         let replicas = pods.items.len();
@@ -298,6 +304,7 @@ impl<'a> PodWatcher<'a> {
                 .unwrap();
         });
 
+        self.selectors = Some(selectors);
         Ok(replicas)
     }
 }
