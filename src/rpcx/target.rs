@@ -227,11 +227,9 @@ impl<'a> PodWatcher<'a> {
                 let pod_name = pod.metadata.name.unwrap_or_default();
                 pending_pods.remove(&uid);
 
-                if let Some(pod_ip) = &pod.status.unwrap_or_default().pod_ip {
-                    match change_tx.send(Change::Remove(pod_name)).await {
-                        Ok(_) => tracing::info!("remove pod: {}", pod_ip),
-                        Err(err) => tracing::debug!("remove pod failed: {}", err),
-                    }
+                match change_tx.send(Change::Remove(pod_name.clone())).await {
+                    Ok(_) => tracing::info!("remove pod: {}", pod_name),
+                    Err(err) => tracing::debug!("remove pod failed: {}", err),
                 }
             }
             _ => {}
