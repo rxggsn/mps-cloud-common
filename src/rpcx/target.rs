@@ -186,10 +186,13 @@ impl<'a> PodWatcher<'a> {
                     transport::Endpoint::new(format!("http://{}:{}", pod_ip, port.unwrap_or(80)))
                         .map_err(|err| TargetError::Transport(err))
                         .unwrap();
-                match change_tx.send(Change::Insert(pod_name, endpoint)).await {
+                match change_tx
+                    .send(Change::Insert(pod_name.clone(), endpoint))
+                    .await
+                {
                     Ok(_) => {
                         pending_pods.remove(&uid);
-                        tracing::info!("insert new pod: {}", pod_ip)
+                        tracing::info!("insert new pod: {}", pod_name)
                     }
                     Err(err) => {
                         tracing::error!("insert new pod failed: {}", err)
