@@ -142,7 +142,7 @@ impl<'a> PodWatcher<'a> {
         let api = Api::<Pod>::namespaced(k8s, &self.namespace);
         let mut wp = WatchParams::default();
         if let Some(selectors) = &self.selectors {
-            wp = wp.fields(&selectors);
+            wp = wp.labels(&selectors);
         }
         let mut stream = api
             .watch(&wp, "0")
@@ -262,7 +262,7 @@ impl<'a> PodWatcher<'a> {
         selectors.pop();
         let api = Api::<Pod>::namespaced(k8s.clone(), &self.namespace);
         let pods = api
-            .list(&ListParams::default().fields(&selectors))
+            .list(&ListParams::default().labels(&selectors))
             .await
             .map_err(|err| TargetError::K8S(err))?;
         let replicas = pods.items.len();
