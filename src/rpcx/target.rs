@@ -161,7 +161,8 @@ impl<'a> PodWatcher<'a> {
                         tracing::error!("watch pod error: {}", err);
                     }
                 }
-            }
+            };
+            tracing::info!("watch pod stream closed")
         });
 
         Ok(replicas)
