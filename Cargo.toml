@@ -63,6 +63,10 @@ optional = true
 version = "0.3.2"
 optional = true
 
+[build-dependencies]
+tonic-build = "0.10"
+prost-build = "0.12"
+
 
 [features]
 pgx = ["tokio-postgres", "postgres-types"]
@@ -83,4 +87,8 @@ full = ["kafkax", "redisx", "elasticx", "rpcx", "pgx"]
 default = []
 
 [dev-dependencies]
-common = { path = "../common", features = ["full"] }
+common = { path = ".", features = ["full"] }
+tokio-stream = { version = "0.1.12" }
+tonic = { version = "0.10" }
+prost = "0.12"
+prost-types = "0.12"
