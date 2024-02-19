@@ -84,7 +84,7 @@ rpcx = [
     "tower",
 ]
 full = ["kafkax", "redisx", "elasticx", "rpcx", "pgx"]
-default = []
+default = ["futures"]
 
 [dev-dependencies]
 common = { path = ".", features = ["full"] }
