@@ -1,10 +1,8 @@
-use std::fmt::{Debug, Display};
-extern crate crypto as cryptox;
-use cryptox::{
-    aes::KeySize,
-    buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer},
-    symmetriccipher::{Decryptor, Encryptor, SymmetricCipherError},
+use aes::{
+    cipher::{generic_array::GenericArray, KeyIvInit, StreamCipher, StreamCipherError},
+    Aes128,
 };
+use std::fmt::{Debug, Display};
 
 use crate::utils::codec::hex_string_as_slice;
 
@@ -20,32 +18,16 @@ impl Cryption {
             Cryption::Aes128Ctr { key, iv } => {
                 let key = hex_string_as_slice(key.as_str());
                 let iv = hex_string_as_slice(iv.as_str());
-                let mut ciphter = crypto::aes::ctr(KeySize::KeySize128, &key, &iv);
-                let mut output = vec![];
-                let read_buf = &mut RefReadBuffer::new(body_buf);
-                let ref mut buffer = vec![0x00; 1024];
+                let mut cipher = ctr::Ctr128BE::<Aes128>::new(
+                    &GenericArray::from_iter(key),
+                    &GenericArray::from_iter(iv),
+                );
 
-                let write_buf = &mut RefWriteBuffer::new(buffer);
-                loop {
-                    match ciphter.decrypt(read_buf, write_buf, true) {
-                        Ok(result) => {
-                            output.extend(
-                                write_buf
-                                    .take_read_buffer()
-                                    .take_remaining()
-                                    .iter()
-                                    .map(|&i| i),
-                            );
-                            match result {
-                                BufferResult::BufferUnderflow => break,
-                                BufferResult::BufferOverflow => {}
-                            }
-                        }
-                        Err(err) => return Err(CryptionError::SymmetricCipherError(err)),
-                    }
-                }
-
-                Ok(bytes::Bytes::from(output))
+                let mut output = vec![0u8; body_buf.len()];
+                cipher
+                    .apply_keystream_b2b(body_buf, &mut output)
+                    .map(|_| bytes::Bytes::from_iter(output))
+                    .map_err(|err| CryptionError::SymmetricCipherError(err))
             }
             _ => Ok(bytes::Bytes::copy_from_slice(body_buf)),
         }
@@ -57,32 +39,16 @@ impl Cryption {
             Cryption::Aes128Ctr { key, iv } => {
                 let key = hex_string_as_slice(key.as_str());
                 let iv = hex_string_as_slice(iv.as_str());
-                let mut ciphter = crypto::aes::ctr(KeySize::KeySize128, &key, &iv);
-                let mut output = vec![];
-                let read_buf = &mut RefReadBuffer::new(buf);
-                let ref mut buffer = vec![0x00; 1024];
+                let mut cipher = ctr::Ctr128BE::<Aes128>::new(
+                    &GenericArray::from_iter(key),
+                    &GenericArray::from_iter(iv),
+                );
 
-                let write_buf = &mut RefWriteBuffer::new(buffer);
-                loop {
-                    match ciphter.encrypt(read_buf, write_buf, true) {
-                        Ok(result) => {
-                            output.extend(
-                                write_buf
-                                    .take_read_buffer()
-                                    .take_remaining()
-                                    .iter()
-                                    .map(|&i| i),
-                            );
-                            match result {
-                                BufferResult::BufferUnderflow => break,
-                                BufferResult::BufferOverflow => {}
-                            }
-                        }
-                        Err(err) => return Err(CryptionError::SymmetricCipherError(err)),
-                    }
-                }
-
-                Ok(bytes::Bytes::from(output))
+                let mut output = vec![0u8; buf.len()];
+                cipher
+                    .apply_keystream_b2b(buf, &mut output)
+                    .map(|_| bytes::Bytes::from_iter(output))
+                    .map_err(|err| CryptionError::SymmetricCipherError(err))
             }
         }
     }
@@ -90,13 +56,15 @@ impl Cryption {
 
 #[derive(Debug)]
 pub enum CryptionError {
-    SymmetricCipherError(SymmetricCipherError),
+    SymmetricCipherError(StreamCipherError),
+    InvalidLength(aes::cipher::InvalidLength),
 }
 
 impl Display for CryptionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CryptionError::SymmetricCipherError(err) => err.fmt(f),
+            CryptionError::SymmetricCipherError(err) => std::fmt::Display::fmt(&err, f),
+            CryptionError::InvalidLength(err) => std::fmt::Display::fmt(&err, f),
         }
     }
 }
@@ -108,10 +76,10 @@ mod tests {
     #[test]
     fn test_cryption_decrypt() {
         let cryption = Cryption::Aes128Ctr {
-            key: "a05a938346b456b8e2554efa33559157".to_string(),
-            iv: "a05a938346b456b8e2554efa33559157".to_string(),
+            key: "11111111111111111111111111111111".to_string(),
+            iv: "0102030405060708090a0b0c0d0e0f10".to_string(),
         };
-        let r = cryption.encrypt("1234567".as_bytes());
+        let r = cryption.encrypt("123456789abcdefghijk".as_bytes());
         assert!(r.is_ok());
 
         let encrypt_data = r.expect("msg");
@@ -119,6 +87,6 @@ mod tests {
         let r = cryption.decrypt(&encrypt_data);
         assert!(r.is_ok());
         let decrypt_data = r.expect("msg");
-        assert_eq!(&decrypt_data, "1234567".as_bytes());
+        assert_eq!(&decrypt_data, "123456789abcdefghijk".as_bytes());
     }
 }
