@@ -2,6 +2,7 @@ use std::cell::UnsafeCell;
 
 pub mod checksum;
 pub mod concurrency;
+#[allow(implied_bounds_entailment)]
 pub mod crypto;
 #[cfg(feature = "elasticx")]
 pub mod elasticx;

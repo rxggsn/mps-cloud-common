@@ -1,13 +1,12 @@
 use std::fmt::{Debug, Display};
-
-use crypto::{
+extern crate crypto as cryptox;
+use cryptox::{
     aes::KeySize,
     buffer::{BufferResult, ReadBuffer, RefReadBuffer, RefWriteBuffer, WriteBuffer},
     symmetriccipher::{Decryptor, Encryptor, SymmetricCipherError},
 };
 
 use crate::utils::codec::hex_string_as_slice;
-extern crate crypto;
 
 #[derive(serde::Deserialize, Clone, Debug)]
 #[serde(tag = "type")]
