@@ -1,3 +1,5 @@
+use http::header::HOST;
+
 use crate::GRPC_TRACE_ID;
 
 pub type RpcRequest<T> = tonic::Request<T>;
@@ -13,12 +15,17 @@ pub fn err_response<T>(status: tonic::Status) -> RpcResponse<T> {
     RpcResponse::Err(status)
 }
 
+pub mod client;
 pub mod err;
 pub mod server;
-pub mod client;
 pub mod target;
+pub mod stream;
+mod lb;
 
 const MPS_STATUS_CODE: &str = "999";
+const DEFAULT_BUFFER_SIZE: usize = 1024;
+pub(crate) type PodName = String;
+pub(crate) type PodUid = String;
 
 pub fn retrive_trace_id<T>(req: &RpcRequest<T>) -> Option<String> {
     req.metadata()
@@ -39,22 +46,37 @@ fn set_trace_id<T>(trace_id: &Option<String>, request: &mut RpcRequest<T>) {
 
 pub struct Context<'a> {
     pub trace_id: &'a Option<String>,
+    pub host: Option<String>,
 }
 
 impl<'a> Clone for Context<'a> {
     fn clone(&self) -> Self {
         Self {
             trace_id: self.trace_id,
+            host: self.host.clone(),
         }
     }
 }
 
 impl<'a> Context<'a> {
     pub fn new(trace_id: &'a Option<String>) -> Self {
-        Self { trace_id }
+        Self {
+            trace_id,
+            host: None,
+        }
     }
 
     pub fn set_metadata<T>(&self, request: &mut RpcRequest<T>) {
         set_trace_id(self.trace_id, request);
+        self.host.iter().for_each(|host| {
+            request.metadata_mut().insert(
+                HOST.as_str(),
+                (*host).parse().expect("set host into metadata is failed"),
+            );
+        });
+    }
+
+    pub fn set_host<'b>(&mut self, host: &'b str) {
+        self.host = Some(host.to_string());
     }
 }

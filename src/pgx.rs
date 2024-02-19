@@ -1,9 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use postgres_types::ToSql;
 use tokio::sync::RwLock;
 use tokio_postgres::{tls::NoTlsStream, Config, Connection, NoTls, Row, Socket};
 
+#[derive(Clone)]
 pub struct Postgres {
     cli: Arc<RwLock<tokio_postgres::Client>>,
 }
@@ -32,8 +33,31 @@ impl Default for PostgresBuilder {
 }
 
 impl PostgresBuilder {
+    pub async fn parse(datasource: &str) -> Postgres {
+        let conf = Config::from_str(datasource).expect("parse pg datasource failed");
+        Self::create(conf).await
+    }
+
     pub async fn build(&self) -> Postgres {
         let conf = self.as_conf();
+        Self::create(conf).await
+    }
+
+    fn as_conf(&self) -> Config {
+        Config::new()
+            .dbname(self.db.as_str())
+            .host(&self.hostname)
+            .password(&self.password)
+            .port(self.port)
+            .application_name("mps")
+            .user(&self.username)
+            .connect_timeout(Duration::from_millis(self.connect_timeout))
+            .keepalives_interval(Duration::from_secs(60))
+            .keepalives_retries(3)
+            .to_owned()
+    }
+
+    async fn create(conf: Config) -> Postgres {
         let (client, connection) = conf
             .connect(NoTls)
             .await
@@ -53,20 +77,6 @@ impl PostgresBuilder {
         });
 
         Postgres { cli }
-    }
-
-    fn as_conf(&self) -> Config {
-        Config::new()
-            .dbname(self.db.as_str())
-            .host(&self.hostname)
-            .password(&self.password)
-            .port(self.port)
-            .application_name("mps")
-            .user(&self.username)
-            .connect_timeout(Duration::from_millis(self.connect_timeout))
-            .keepalives_interval(Duration::from_secs(60))
-            .keepalives_retries(3)
-            .to_owned()
     }
 }
 
@@ -114,10 +124,9 @@ impl Postgres {
         stmt: &'a str,
         params: &'a [&(dyn ToSql + Sync)],
     ) -> Result<Option<T>, tokio_postgres::Error> {
-        let stmt = self.cli.read().await.prepare(stmt).await?;
-        self.cli
-            .read()
-            .await
+        let guard = self.cli.read().await;
+        let stmt = guard.prepare(stmt).await?;
+        guard
             .query_opt(&stmt, params)
             .await
             .map(|row| row.map(|r| T::from_row(&r)))
