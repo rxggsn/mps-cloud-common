@@ -18,4 +18,4 @@ run_test() {
 
 cargo check --all-features
 
-run_test Cargo.toml 4
+run_test Cargo.toml 1
