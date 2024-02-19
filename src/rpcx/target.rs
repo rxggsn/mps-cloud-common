@@ -144,25 +144,35 @@ impl<'a> PodWatcher<'a> {
         if let Some(selectors) = &self.selectors {
             wp = wp.labels(&selectors);
         }
-        let mut stream = api
-            .watch(&wp, "0")
-            .await
-            .map_err(|err| TargetError::K8SWatchApi(err.to_string()))?
-            .boxed();
+
         let port = self.port.clone();
         tokio::spawn(async move {
             let ref mut pending_pods = HashSet::new();
-            while let Some(event) = stream.next().await {
-                match event {
-                    Ok(event) => {
-                        Self::handle_pod_event(&port, event, &change_tx, pending_pods).await;
+            loop {
+                match api
+                    .watch(&wp, "0")
+                    .await
+                    .map_err(|err| TargetError::K8SWatchApi(err.to_string()))
+                    .map(|s| s.boxed())
+                {
+                    Ok(mut stream) => {
+                        while let Some(event) = stream.next().await {
+                            match event {
+                                Ok(event) => {
+                                    Self::handle_pod_event(&port, event, &change_tx, pending_pods)
+                                        .await;
+                                }
+                                Err(err) => {
+                                    tracing::error!("watch pod error: {}", err);
+                                }
+                            }
+                        }
                     }
                     Err(err) => {
                         tracing::error!("watch pod error: {}", err);
                     }
                 }
-            };
-            tracing::info!("watch pod stream closed")
+            }
         });
 
         Ok(replicas)
