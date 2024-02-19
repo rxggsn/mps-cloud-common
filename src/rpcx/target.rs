@@ -203,7 +203,7 @@ impl<'a> PodWatcher<'a> {
                 {
                     Ok(_) => {
                         pending_pods.remove(&uid);
-                        tracing::info!("insert new pod: {}", pod_name)
+                        tracing::debug!("insert new pod: {}", pod_name)
                     }
                     Err(err) => {
                         tracing::error!("insert new pod failed: {}", err)
