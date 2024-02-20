@@ -135,6 +135,14 @@ impl Redis {
     ) -> Result<Vec<V>, RedisError> {
         self.inner.smembers(key).await
     }
+
+    pub async fn srem<K: ToRedisArgs + Send + Sync, V: ToRedisArgs + Send + Sync>(
+        &mut self,
+        key: K,
+        val: V,
+    ) -> Result<(), RedisError> {
+        self.inner.srem(key, val).await
+    }
 }
 
 impl RedisConf {
