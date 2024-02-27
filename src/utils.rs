@@ -175,10 +175,12 @@ pub mod codec {
     hex_to_int!(u32, 4, hex_to_u32);
     hex_to_int!(i32, 4, hex_to_i32);
     hex_to_int!(u64, 8, hex_to_u64);
+    hex_to_int!(i64, 8, hex_to_i64);
 
     int_to_hex!(u64, 8, u64_to_hex);
     int_to_hex!(u16, 2, u16_to_hex);
     int_to_hex!(u32, 4, u32_to_hex);
+    int_to_hex!(i64, 8, i64_to_hex);
 
     pub fn u64_to_bcd(val: u64) -> [u8; 8] {
         let mut v = val.to_string();
