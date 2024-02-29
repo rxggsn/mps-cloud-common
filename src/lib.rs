@@ -43,9 +43,11 @@ impl Env {
 }
 
 pub const LOG_TRACE_ID: &str = "X-Trace-Id";
+pub const LOG_SPAN_ID: &str = "X-Span-Id";
 pub const GRPC_TRACE_ID: &str = "x-trace-id";
 pub const SPAN_TRACE_ID: &str = "trace_id";
 pub const SOCKET_BUF_SIZE: usize = 1 << 20;
+pub const GRPC_SPAN_ID: &str = "x-span-id";
 
 thread_local! {
     pub static LOCAL_IP_NUM: UnsafeCell<i32> = UnsafeCell::new(0);

@@ -5,7 +5,7 @@ use hyper::Body;
 use tonic::{body::BoxBody, transport::NamedService};
 use tower_service::Service;
 
-use crate::{rpcx::retrive_trace_id, GRPC_TRACE_ID, LOG_TRACE_ID};
+use crate::{rpcx::retrive_trace_id, GRPC_SPAN_ID, GRPC_TRACE_ID, LOG_SPAN_ID, LOG_TRACE_ID};
 
 use super::RpcRequest;
 
@@ -20,11 +20,39 @@ where
 {
     tonic::transport::Server::builder()
         .timeout(Duration::from_secs(30))
-        .trace_fn(|request| match request.headers().get(GRPC_TRACE_ID) {
-            Some(trace_id) => {
-                tracing::info_span!(LOG_TRACE_ID, trace_id = trace_id.to_str().unwrap_or(""))
+        .trace_fn(|request| {
+            match (
+                request.headers().get(GRPC_TRACE_ID),
+                request.headers().get(GRPC_SPAN_ID),
+            ) {
+                (Some(trace_id), Some(span_id)) => {
+                    tracing::info_span!(
+                        LOG_TRACE_ID,
+                        trace_id = trace_id.to_str().unwrap_or(""),
+                        LOG_SPAN_ID,
+                        span_id = span_id.to_str().unwrap_or("")
+                    )
+                }
+                (Some(trace_id), None) => {
+                    tracing::info_span!(
+                        LOG_TRACE_ID,
+                        trace_id = trace_id.to_str().unwrap_or(""),
+                        LOG_SPAN_ID,
+                        span_id = ""
+                    )
+                }
+                (None, Some(span_id)) => {
+                    tracing::info_span!(
+                        LOG_TRACE_ID,
+                        trace_id = "",
+                        LOG_SPAN_ID,
+                        span_id = span_id.to_str().unwrap_or("")
+                    )
+                }
+                (None, None) => {
+                    tracing::info_span!(LOG_TRACE_ID, trace_id = "", LOG_SPAN_ID, span_id = "")
+                }
             }
-            None => tracing::info_span!(LOG_TRACE_ID, trace_id = ""),
         })
         .add_service(svc)
         .serve(addr)
