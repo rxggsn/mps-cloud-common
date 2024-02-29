@@ -1,6 +1,6 @@
 use http::header::HOST;
 
-use crate::GRPC_TRACE_ID;
+use crate::{GRPC_SPAN_ID, GRPC_TRACE_ID};
 
 pub type RpcRequest<T> = tonic::Request<T>;
 pub type StreamRpcRequest<T> = tonic::Request<tonic::Streaming<T>>;
@@ -17,10 +17,10 @@ pub fn err_response<T>(status: tonic::Status) -> RpcResponse<T> {
 
 pub mod client;
 pub mod err;
-pub mod server;
-pub mod target;
-pub mod stream;
 mod lb;
+pub mod server;
+pub mod stream;
+pub mod target;
 
 const MPS_STATUS_CODE: &str = "999";
 const DEFAULT_BUFFER_SIZE: usize = 1024;
@@ -31,6 +31,12 @@ pub fn retrive_trace_id<T>(req: &RpcRequest<T>) -> Option<String> {
     req.metadata()
         .get(GRPC_TRACE_ID)
         .map(|val| val.to_str().unwrap_or_default().to_string())
+}
+
+pub fn retrive_span_id<T>(req: &RpcRequest<T>) -> Option<i32> {
+    req.metadata()
+        .get(GRPC_SPAN_ID)
+        .map(|val| val.to_str().unwrap_or_default().parse().unwrap_or_default())
 }
 
 fn set_trace_id<T>(trace_id: &Option<String>, request: &mut RpcRequest<T>) {
@@ -47,6 +53,7 @@ fn set_trace_id<T>(trace_id: &Option<String>, request: &mut RpcRequest<T>) {
 pub struct Context<'a> {
     pub trace_id: &'a Option<String>,
     pub host: Option<String>,
+    pub span_id: Option<i32>,
 }
 
 impl<'a> Clone for Context<'a> {
@@ -54,6 +61,7 @@ impl<'a> Clone for Context<'a> {
         Self {
             trace_id: self.trace_id,
             host: self.host.clone(),
+            span_id: self.span_id.clone(),
         }
     }
 }
@@ -63,6 +71,18 @@ impl<'a> Context<'a> {
         Self {
             trace_id,
             host: None,
+            span_id: None,
+        }
+    }
+
+    pub fn from_rpc<T>(trace_id: &'a Option<String>, req: &RpcRequest<T>) -> Self {
+        Self {
+            trace_id,
+            host: req
+                .metadata()
+                .get(HOST.as_str())
+                .map(|val| val.to_str().unwrap_or_default().to_string()),
+            span_id: retrive_span_id(req),
         }
     }
 
@@ -74,6 +94,14 @@ impl<'a> Context<'a> {
                 (*host).parse().expect("set host into metadata is failed"),
             );
         });
+        let next_span_id = self.span_id.unwrap_or_default() + 1;
+        request.metadata_mut().insert(
+            GRPC_SPAN_ID,
+            next_span_id
+                .to_string()
+                .parse()
+                .expect("set span id into metadata is failed"),
+        );
     }
 
     pub fn set_host<'b>(&mut self, host: &'b str) {

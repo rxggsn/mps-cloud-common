@@ -4,7 +4,7 @@ use tracing_subscriber::{
     prelude::__tracing_subscriber_SubscriberExt, util::SubscriberInitExt, Layer,
 };
 
-use crate::{utils, LOG_TRACE_ID};
+use crate::{utils, LOG_SPAN_ID, LOG_TRACE_ID};
 
 pub(crate) struct LayerX;
 
@@ -64,17 +64,24 @@ where
         ctx: tracing_subscriber::layer::Context<'_, S>,
     ) {
         const INNERT_TRACE_ID: &str = "trace_id";
+        const INNERT_SPAN_ID: &str = "span_id";
         ctx.span(id).into_iter().for_each(|span| {
             let mut fields = BTreeMap::new();
             let mut visitor = JsonVisitor(&mut fields);
             attrs.record(&mut visitor);
+            let mut storage = LayerXFieldStorage::new();
             fields.get(INNERT_TRACE_ID).iter().for_each(|trace_id| {
-                let mut storage = LayerXFieldStorage::new();
                 if trace_id.as_str().map(|s| !s.is_empty()).unwrap_or_default() {
                     storage.insert(LOG_TRACE_ID.to_string(), (*trace_id).clone());
                 }
-                span.extensions_mut().insert(storage);
             });
+
+            fields.get(INNERT_SPAN_ID).iter().for_each(|span_id| {
+                if span_id.as_str().map(|s| !s.is_empty()).unwrap_or_default() {
+                    storage.insert(LOG_SPAN_ID.to_string(), (*span_id).clone());
+                }
+            });
+            span.extensions_mut().insert(storage);
         })
     }
 }
