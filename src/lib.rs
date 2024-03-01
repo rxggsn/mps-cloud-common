@@ -20,6 +20,8 @@ pub mod rpcx;
 pub mod socketx;
 pub mod times;
 pub mod utils;
+#[cfg(feature = "dbx")]
+pub mod dbx;
 
 #[derive(serde::Deserialize, Clone, PartialEq, Eq, Debug)]
 pub enum Env {

@@ -43,6 +43,10 @@ kube = { version = "0.85.0", features = ["runtime", "derive"], optional = true }
 k8s-openapi = { version = "0.19.0", features = ["v1_27"], optional = true }
 tower = { version = "0.4.13", optional = true }
 rand = "0.8.5"
+rocksdb = { version = "0.21.0", optional = true, default-features = false, features = [
+    "lz4"
+] }
+sled = { version = "0.34", optional = true }
 
 [dependencies.uuid]
 version = "1.2.1"
@@ -84,7 +88,10 @@ rpcx = [
     "futures",
     "tower",
 ]
-full = ["kafkax", "redisx", "elasticx", "rpcx", "pgx"]
+dbx = []
+rocksdb-enable = ["rocksdb"]
+sled-enable = ["sled"]
+full = ["kafkax", "redisx", "elasticx", "rpcx", "pgx", "dbx"]
 default = ["futures"]
 
 [dev-dependencies]
