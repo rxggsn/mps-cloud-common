@@ -135,6 +135,13 @@ impl RocksKv {
             None => Ok(None),
         }
     }
+
+    fn maybe_exist_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<bool, DBError> {
+        match self.cf_handle(cf) {
+            Some(cf) => Ok(self.db.key_may_exist_cf(cf, key)),
+            None => Ok(false),
+        }
+    }
 }
 
 #[cfg(feature = "rocksdb-enable")]
@@ -166,7 +173,6 @@ impl Kv for RocksKv {
 
         let mut opt = rocksdb::ReadOptions::default();
         opt.set_iterate_range((keys[0].clone())..(keys[keys.len() - 1].clone()));
-        opt.set_prefix_same_as_start(true);
 
         let results = self
             .db
@@ -399,6 +405,10 @@ impl DBWithInnerKvStore<RocksKv> {
     ) -> Result<Option<bytes::Bytes>, DBError> {
         self.db.put_cf(cf, key, value)
     }
+
+    pub fn maybe_exist_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<bool, DBError> {
+        self.db.maybe_exist_cf(cf, key)
+    }
 }
 
 #[cfg(feature = "sled-enable")]
@@ -435,6 +445,10 @@ impl<Inner: Kv> DBWithInnerKvStore<Inner> {
 
     pub fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<bytes::Bytes>, DBError> {
         self.db.list_prefix(prefix)
+    }
+
+    pub fn maybe_exists<K: AsRef<[u8]>>(&self, key: &K) -> Result<bool, DBError> {
+        self.db.maybe_contains(key)
     }
 }
 
