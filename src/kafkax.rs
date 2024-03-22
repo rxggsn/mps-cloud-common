@@ -67,7 +67,7 @@ impl KafkaProducer {
             String::from_utf8_lossy(payload).to_string()
         );
         let record = FutureRecord::to(topic.as_str())
-            .partition(message.partition())
+            .partition(message.partition().abs())
             .payload(payload)
             .key(key);
         self.inner
