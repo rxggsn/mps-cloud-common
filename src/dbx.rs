@@ -32,7 +32,7 @@ pub trait Kv: Clone + Send + Sync {
         value: V,
     ) -> Result<Option<bytes::Bytes>, DBError>;
 
-    fn delete<K: AsRef<[u8]>>(&self, key: &K) -> Result<(), DBError>;
+    fn delete<K: AsRef<[u8]>>(&self, key: K) -> Result<(), DBError>;
 
     fn list<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
         if keys.is_empty() {
@@ -127,7 +127,7 @@ impl Kv for RocksKv {
             .map_err(|err| err.into())
     }
 
-    fn delete<K: AsRef<[u8]>>(&self, key: &K) -> Result<(), DBError> {
+    fn delete<K: AsRef<[u8]>>(&self, key: K) -> Result<(), DBError> {
         self.db.delete(key).map_err(|err| err.into())
     }
 
@@ -139,7 +139,7 @@ impl Kv for RocksKv {
 
         let mut offset = 0;
 
-        let results = self
+        let mut results = self
             .db
             .iterator_opt(
                 rocksdb::IteratorMode::From(keys[0].as_ref(), rocksdb::Direction::Forward),
@@ -163,6 +163,16 @@ impl Kv for RocksKv {
             .filter(|r| r.is_ok())
             .map(|r| r.unwrap())
             .collect::<Vec<_>>();
+
+        let _ = self
+            .db
+            .get(&keys[keys.len() - 1])
+            .map(|opt| {
+                opt.into_iter().for_each(|value| {
+                    results.push((keys[keys.len() - 1].clone(), bytes::Bytes::from_iter(value)));
+                })
+            })
+            .map_err(|err| group_errs.push(err.into()));
 
         if group_errs.is_empty() {
             Ok(results)
@@ -285,7 +295,7 @@ impl Kv for RocksKv {
                 opt.set_iterate_range(keys[0].clone()..keys[keys.len() - 1].clone());
                 let mut errors = vec![];
                 let mut offset = 0;
-                let kvs = self
+                let mut kvs = self
                     .db
                     .iterator_cf_opt(
                         cf,
@@ -314,6 +324,18 @@ impl Kv for RocksKv {
                     .filter(|r| r.is_some())
                     .map(|r| r.unwrap())
                     .collect::<Vec<_>>();
+                let _ = self
+                    .db
+                    .get_cf(cf, &keys[keys.len() - 1])
+                    .map(|opt| {
+                        opt.into_iter().for_each(|value| {
+                            kvs.push((
+                                keys[keys.len() - 1].clone(),
+                                bytes::Bytes::from_iter(value),
+                            ));
+                        })
+                    })
+                    .map_err(|err| errors.push(err.into()));
                 if errors.is_empty() {
                     Ok(kvs)
                 } else {
@@ -498,7 +520,7 @@ impl<Inner: Kv> DBWithInnerKvStore<Inner> {
         self.db.put(key, value)
     }
 
-    pub fn delete<K: AsRef<[u8]>>(&self, key: &K) -> Result<(), DBError> {
+    pub fn delete<K: AsRef<[u8]>>(&self, key: K) -> Result<(), DBError> {
         self.db.delete(key)
     }
 
@@ -608,6 +630,96 @@ impl From<sled::Error> for DBError {
             sled::Error::Io(err) => DBError::IoError(err.to_string()),
             sled::Error::CollectionNotFound(_) => DBError::NotFound,
             _ => DBError::Other(err.to_string()),
+        }
+    }
+}
+
+#[cfg(test)]
+mod rocksdbtest {
+    use super::{Options, DB};
+
+    #[test]
+    #[cfg(feature = "rocksdb-enable")]
+    fn test_rocksdb_dbx_crud() {
+        let mut opts = Options::default();
+        opts.fixed_prefix_length(24);
+        let db =
+            DB::open_cf(&opts, format!("{}/mpscloud/dbx", env!("HOME")), &["cf"]).expect("msg");
+
+        {
+            db.put("key", "value").expect("msg");
+            db.put("key1", "value1").expect("msg");
+            db.put("key2", "value2").expect("msg");
+        }
+
+        {
+            let val = db.get("key").expect("msg").expect("msg");
+            let val = String::from_utf8_lossy(&val).to_string();
+            assert_eq!(val, "value");
+
+            let val = db.get("key1").expect("msg").expect("msg");
+            let val = String::from_utf8_lossy(&val).to_string();
+            assert_eq!(val, "value1");
+
+            let val = db.get("key2").expect("msg").expect("msg");
+            let val = String::from_utf8_lossy(&val).to_string();
+            assert_eq!(val, "value2");
+        }
+
+        {
+            assert!(db.put_cf("cf", "key", "value").expect("msg").is_none());
+            assert!(db.put_cf("cf", "key1", "value1").expect("msg").is_none());
+            assert!(db.put_cf("cf", "key2", "value2").expect("msg").is_none());
+            assert!(db.put_cf("cf", "key3", "value3").expect("msg").is_none());
+        }
+
+        {
+            let val = db.get_cf("cf", "key").expect("msg").expect("msg");
+            let val = String::from_utf8_lossy(&val).to_string();
+            assert_eq!(val, "value");
+
+            let val = db.get_cf("cf", "key1").expect("msg").expect("msg");
+            let val = String::from_utf8_lossy(&val).to_string();
+            assert_eq!(val, "value1");
+
+            let val = db.get_cf("cf", "key2").expect("msg").expect("msg");
+            let val = String::from_utf8_lossy(&val).to_string();
+            assert_eq!(val, "value2");
+        }
+
+        {
+            let list = db.list(&["key", "key1", "key2"]).expect("msg");
+            let mut values = list
+                .into_iter()
+                .map(|(_, val)| String::from_utf8_lossy(&val).to_string())
+                .collect::<Vec<_>>();
+            values.sort();
+
+            assert_eq!(values, vec!["value", "value1", "value2"]);
+        }
+
+        {
+            let list = db.list_cf("cf", &["key", "key1", "key3"]).expect("msg");
+            let mut values = list
+                .into_iter()
+                .map(|(_, val)| String::from_utf8_lossy(&val).to_string())
+                .collect::<Vec<_>>();
+            values.sort();
+
+            assert_eq!(values, vec!["value", "value1", "value3"]);
+        }
+
+        {
+            db.delete("key").expect("msg");
+            db.delete("key1").expect("msg");
+            db.delete("key2").expect("msg");
+        }
+
+        {
+            db.delete_cf("cf", "key").expect("msg");
+            db.delete_cf("cf", "key1").expect("msg");
+            db.delete_cf("cf", "key2").expect("msg");
+            db.delete_cf("cf", "key3").expect("msg");
         }
     }
 }

@@ -13,7 +13,7 @@ pub fn group<K: Ord, V, F: FnMut(&V) -> K>(iter: &Vec<V>, mut key: F) -> BTreeMa
     iter.iter().for_each(|elem| {
         let k = key(elem);
         let v = map.entry(k).or_insert(Vec::new());
-        v.push(elem.clone());
+        v.push(elem);
     });
     map
 }
