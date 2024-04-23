@@ -55,12 +55,13 @@ impl LoadBalancePolicy {
 // Listener-thread-0                 |Thread-0                          | Thread-1
 // ----------------------------------|----------------------------------|----------
 //                                                                        let thread_1 = thread_0.clone()
-// // here, listener send pod change |                                  |
-// let _  = tx.send(..)                // update inner states
-//                                   | thread_0.update_pod_status()       // concurrently update inner states
+// // listener sends pod change      |                                  |
+// let _  = tx.send(..)                // update inner states             // thread_1 still see the old inner states
+//                                   | thread_0.update_pod_status()     | thread_1.inner.len() == 1 
+//                                   |                                  | // continue to update inner states
 //                                   |                                  | thread_1.update_pod_status()
-//                                     // thread-0 and thread-1 will share same inner states
-//                                   | thread_0.inner.len() == 2        | thread_1.inner.len() == 2            |
+//                                     // thread-0 and thread-1 share same inner states eventually
+//                                   | thread_0.inner.len() == 2        | thread_1.inner.len() == 2            
 #[derive(Clone, Debug)]
 pub struct PodLoadBalancer {
     inner: Vec<Pod>,
