@@ -36,7 +36,7 @@ ctr = "0.9.2"
 regex = "1"
 elasticsearch = { version = "7.10.1-alpha.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true }
-tokio-postgres = { version = "0.7.8", optional = true }
+tokio-postgres = { version = "0.7.8", features = ["runtime"], optional = true }
 postgres-types = { version = "0.2.5", optional = true }
 
 kube = { version = "0.85.0", features = ["runtime", "derive"], optional = true }
@@ -44,7 +44,7 @@ k8s-openapi = { version = "0.19.0", features = ["v1_27"], optional = true }
 tower = { version = "0.4.13", optional = true }
 rand = "0.8.5"
 rocksdb = { version = "0.21.0", optional = true, default-features = false, features = [
-    "lz4"
+    "lz4",
 ] }
 sled = { version = "0.34", optional = true }
 

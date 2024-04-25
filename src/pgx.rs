@@ -1,12 +1,11 @@
 use std::{str::FromStr, sync::Arc, time::Duration};
 
 use postgres_types::ToSql;
-use tokio::sync::RwLock;
 use tokio_postgres::{tls::NoTlsStream, Config, Connection, NoTls, Row, Socket};
 
 #[derive(Clone)]
 pub struct Postgres {
-    cli: Arc<RwLock<tokio_postgres::Client>>,
+    cli: Arc<tokio_postgres::Client>,
 }
 
 #[derive(Clone, serde::Deserialize, Debug)]
@@ -64,17 +63,7 @@ impl PostgresBuilder {
             .expect("create pg connection failed");
         monitor_connection(connection);
 
-        let cli = Arc::new(RwLock::new(client));
-
-        let cli_cloned = cli.clone();
-
-        tokio::spawn(async move {
-            let checker = KeepAliveChecker {
-                client: cli_cloned,
-                conf,
-            };
-            checker.start().await
-        });
+        let cli = Arc::new(client);
 
         Postgres { cli }
     }
@@ -86,10 +75,8 @@ impl Postgres {
         stmt: &'a str,
         params: &'a [&(dyn ToSql + Sync)],
     ) -> Result<Vec<T>, tokio_postgres::Error> {
-        let stmt = self.cli.read().await.prepare(stmt).await?;
+        let stmt = self.cli.prepare(stmt).await?;
         self.cli
-            .read()
-            .await
             .query(&stmt, params)
             .await
             .map(|row| row.iter().map(T::from_row).collect())
@@ -100,8 +87,8 @@ impl Postgres {
         stmt: &str,
         params: &[&(dyn ToSql + Sync)],
     ) -> Result<u64, tokio_postgres::Error> {
-        let stmt = self.cli.read().await.prepare(stmt).await?;
-        self.cli.read().await.execute(&stmt, params).await
+        let stmt = self.cli.prepare(stmt).await?;
+        self.cli.execute(&stmt, params).await
     }
 
     pub async fn query_one<'a, T: Table>(
@@ -109,11 +96,9 @@ impl Postgres {
         stmt: &'a str,
         params: &'a [&(dyn ToSql + Sync)],
     ) -> Result<T, tokio_postgres::Error> {
-        let stmt = self.cli.read().await.prepare(stmt).await?;
+        let stmt = self.cli.prepare(stmt).await?;
 
         self.cli
-            .read()
-            .await
             .query_one(&stmt, params)
             .await
             .map(|row| T::from_row(&row))
@@ -124,9 +109,8 @@ impl Postgres {
         stmt: &'a str,
         params: &'a [&(dyn ToSql + Sync)],
     ) -> Result<Option<T>, tokio_postgres::Error> {
-        let guard = self.cli.read().await;
-        let stmt = guard.prepare(stmt).await?;
-        guard
+        let stmt = self.cli.prepare(stmt).await?;
+        self.cli
             .query_opt(&stmt, params)
             .await
             .map(|row| row.map(|r| T::from_row(&r)))
@@ -153,37 +137,37 @@ pub trait Table {
     fn from_row(row: &Row) -> Self;
 }
 
-struct KeepAliveChecker {
-    client: Arc<RwLock<tokio_postgres::Client>>,
-    conf: Config,
-}
+// struct KeepAliveChecker {
+//     client: Arc<RwLock<tokio_postgres::Client>>,
+//     conf: Config,
+// }
 
-impl KeepAliveChecker {
-    async fn start(self) {
-        let mut interval = tokio::time::interval(
-            self.conf
-                .get_keepalives_interval()
-                .unwrap_or(Duration::from_secs(60)),
-        );
+// impl KeepAliveChecker {
+//     async fn start(self) {
+//         let mut interval = tokio::time::interval(
+//             self.conf
+//                 .get_keepalives_interval()
+//                 .unwrap_or(Duration::from_secs(60)),
+//         );
 
-        loop {
-            interval.tick().await;
-            let client = self.client.read().await;
-            if let Err(e) = client.execute("SELECT 1", &[]).await {
-                tracing::error!("pg keepalive check failed: {}", e);
+//         loop {
+//             interval.tick().await;
+//             let client = self.client.read().await;
+//             if let Err(e) = client.execute("SELECT 1", &[]).await {
+//                 tracing::error!("pg keepalive check failed: {}", e);
 
-                drop(client);
+//                 drop(client);
 
-                if let Ok((client, conn)) = self.conf.connect(NoTls).await {
-                    let mut client_mut = self.client.write().await;
-                    *client_mut = client;
-                    drop(client_mut);
-                    monitor_connection(conn)
-                }
-            }
-        }
-    }
-}
+//                 if let Ok((client, conn)) = self.conf.connect(NoTls).await {
+//                     let mut client_mut = self.client.write().await;
+//                     *client_mut = client;
+//                     drop(client_mut);
+//                     monitor_connection(conn)
+//                 }
+//             }
+//         }
+//     }
+// }
 
 fn monitor_connection(conn: Connection<Socket, NoTlsStream>) {
     tokio::spawn(async move {
