@@ -1,6 +1,7 @@
 use std::{
     ffi::OsStr,
     net::{ToSocketAddrs, UdpSocket},
+    sync::atomic::{AtomicI64, Ordering},
     time::Duration,
 };
 
@@ -287,6 +288,15 @@ pub fn exponential_backoff(times: u32) -> Duration {
 
 //     &nodes[0]
 // }
+
+#[derive(Default)]
+pub struct I64IdGenerator(AtomicI64);
+
+impl I64IdGenerator {
+    pub fn next_id(&self) -> i64 {
+        self.0.fetch_add(1, Ordering::SeqCst)
+    }
+}
 
 #[cfg(test)]
 mod tests {
