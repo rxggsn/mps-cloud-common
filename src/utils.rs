@@ -79,7 +79,7 @@ rand_number!(i64, rand_i64);
 rand_number!(i32, rand_i32);
 
 pub mod conf {
-    use std::io;
+    use std::{io, path::Path};
 
     use regex::Regex;
     use serde::de;
@@ -123,6 +123,18 @@ pub mod conf {
         T: de::DeserializeOwned,
     {
         let path = get_env("MPS_CONFIG_PATH").unwrap_or("etc/config.yaml".to_string());
+        match tokio::fs::OpenOptions::new().read(true).open(path).await {
+            Ok(file) => from_yml_reader(file.into_std().await)
+                .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err)),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub async fn load_config_path<T, P>(path: P) -> io::Result<T>
+    where
+        T: de::DeserializeOwned,
+        P: AsRef<Path>,
+    {
         match tokio::fs::OpenOptions::new().read(true).open(path).await {
             Ok(file) => from_yml_reader(file.into_std().await)
                 .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err)),
