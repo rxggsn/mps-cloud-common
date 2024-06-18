@@ -265,6 +265,13 @@ pub mod codec {
 
         result
     }
+
+    pub fn buf_to_hex(buf: &[u8]) -> String {
+        buf.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<String>>()
+            .join("")
+    }
 }
 
 pub fn exponential_backoff(times: u32) -> Duration {
