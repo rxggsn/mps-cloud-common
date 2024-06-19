@@ -30,9 +30,9 @@ redis = { version = "0.22", features = [
 ], optional = true }
 hostname = "^0.3"
 crossbeam-skiplist = "*"
-crc = "3.0"
-aes = "0.8.4"
-ctr = "0.9.2"
+crc = { version = "3.0", optional = true }
+aes = { version = "0.8.4", optional = true }
+ctr = { version = "0.9.2", optional = true }
 regex = "1"
 elasticsearch = { version = "7.10.1-alpha.1", optional = true }
 tracing-subscriber = { version = "0.3", optional = true }
@@ -84,8 +84,20 @@ rpcx = [
     "futures",
     "tower",
 ]
-full = ["kafkax", "redisx", "elasticx", "rpcx", "pgx"]
+full = [
+    "kafkax",
+    "redisx",
+    "elasticx",
+    "rpcx",
+    "pgx",
+    "crypto",
+    "checksum",
+    "concurrency",
+]
 default = ["futures"]
+crypto = ["aes", "ctr"]
+checksum = ["crc"]
+concurrency = []
 
 [dev-dependencies]
 common = { path = ".", features = ["full"] }
