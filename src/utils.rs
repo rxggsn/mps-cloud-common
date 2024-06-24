@@ -308,8 +308,13 @@ pub fn exponential_backoff(times: u32) -> Duration {
 //     &nodes[0]
 // }
 
-#[derive(Default)]
 pub struct I64IdGenerator(AtomicI64);
+
+impl Default for I64IdGenerator {
+    fn default() -> Self {
+        Self(AtomicI64::new(1))
+    }
+}
 
 impl I64IdGenerator {
     pub fn next_id(&self) -> i64 {
