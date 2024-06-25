@@ -1,3 +1,5 @@
+pub const YEAR_SECONDS: u32 = 31536000;
+
 // now timestamp, in millis
 pub fn now_timestamp() -> i64 {
     chrono::Local::now().timestamp_millis()
