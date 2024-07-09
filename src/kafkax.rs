@@ -24,11 +24,9 @@ impl rdkafka::config::FromClientConfig for KafkaProducer {
 impl Drop for KafkaProducer {
     fn drop(&mut self) {
         match self.flush() {
-            Ok(_) => tracing::info!("flush all kafka events success"),
+            Ok(_) => tracing::debug!("flush all kafka events success"),
             Err(err) => tracing::error!("flush kafka events failed: {}", err),
         }
-
-        drop(&mut self.inner);
     }
 }
 

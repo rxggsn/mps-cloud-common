@@ -124,10 +124,10 @@ struct PodWatcher<'a> {
 }
 
 impl<'a> PodWatcher<'a> {
-    const PENDING: &str = "Pending";
-    const RUNNING: &str = "Running";
-    const SUCCEEDED: &str = "Succeeded";
-    const FAILED: &str = "Failed";
+    const PENDING: &'static str = "Pending";
+    const RUNNING: &'static str = "Running";
+    const SUCCEEDED: &'static str = "Succeeded";
+    const FAILED: &'static str = "Failed";
 
     async fn watch_pod_change(
         &mut self,

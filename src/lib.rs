@@ -1,7 +1,10 @@
 use std::cell::UnsafeCell;
 
+#[cfg(feature = "checksum")]
 pub mod checksum;
+#[cfg(feature = "concurrency")]
 pub mod concurrency;
+#[cfg(feature = "crypto")]
 pub mod crypto;
 #[cfg(feature = "elasticx")]
 pub mod elasticx;

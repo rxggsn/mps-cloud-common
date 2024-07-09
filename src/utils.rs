@@ -1,6 +1,7 @@
 use std::{
     ffi::OsStr,
     net::{ToSocketAddrs, UdpSocket},
+    sync::atomic::{AtomicI64, Ordering},
     time::Duration,
 };
 
@@ -78,7 +79,7 @@ rand_number!(i64, rand_i64);
 rand_number!(i32, rand_i32);
 
 pub mod conf {
-    use std::io;
+    use std::{io, path::Path};
 
     use regex::Regex;
     use serde::de;
@@ -122,6 +123,18 @@ pub mod conf {
         T: de::DeserializeOwned,
     {
         let path = get_env("MPS_CONFIG_PATH").unwrap_or("etc/config.yaml".to_string());
+        match tokio::fs::OpenOptions::new().read(true).open(path).await {
+            Ok(file) => from_yml_reader(file.into_std().await)
+                .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err)),
+            Err(err) => Err(err),
+        }
+    }
+
+    pub async fn load_config_path<T, P>(path: P) -> io::Result<T>
+    where
+        T: de::DeserializeOwned,
+        P: AsRef<Path>,
+    {
         match tokio::fs::OpenOptions::new().read(true).open(path).await {
             Ok(file) => from_yml_reader(file.into_std().await)
                 .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err)),
@@ -252,6 +265,13 @@ pub mod codec {
 
         result
     }
+
+    pub fn buf_to_hex(buf: &[u8]) -> String {
+        buf.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect::<Vec<String>>()
+            .join("")
+    }
 }
 
 pub fn exponential_backoff(times: u32) -> Duration {
@@ -287,6 +307,20 @@ pub fn exponential_backoff(times: u32) -> Duration {
 
 //     &nodes[0]
 // }
+
+pub struct I64IdGenerator(AtomicI64);
+
+impl Default for I64IdGenerator {
+    fn default() -> Self {
+        Self(AtomicI64::new(1))
+    }
+}
+
+impl I64IdGenerator {
+    pub fn next_id(&self) -> i64 {
+        self.0.fetch_add(1, Ordering::SeqCst)
+    }
+}
 
 #[cfg(test)]
 mod tests {

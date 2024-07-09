@@ -1,4 +1,4 @@
-use futures::Future;
+use futures::{Future, FutureExt};
 use tokio::sync::watch::{Receiver, Ref};
 use tonic::async_trait;
 
@@ -42,6 +42,20 @@ where
 
 pub enum SubscriberError {
     Closed,
+}
+
+pub fn wait<R, FnFut>(cx: &mut std::task::Context<'_>, fut: FnFut) -> R
+where
+    FnFut: Future<Output = R> + Send,
+    R: Send + 'static,
+{
+    let mut future = Box::pin(fut);
+    loop {
+        match future.poll_unpin(cx) {
+            std::task::Poll::Ready(result) => return result,
+            std::task::Poll::Pending => continue,
+        }
+    }
 }
 
 pub async fn join<R, FnFut>(futures: Vec<FnFut>) -> Vec<R>

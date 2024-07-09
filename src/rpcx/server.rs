@@ -1,4 +1,9 @@
-use std::{convert::Infallible, fmt::Debug, net::SocketAddr, time::Duration};
+use std::{
+    convert::Infallible,
+    fmt::{Debug, Display},
+    net::SocketAddr,
+    time::Duration,
+};
 
 use http::{Request, Response};
 use hyper::Body;
@@ -59,12 +64,22 @@ where
         .await
 }
 
-pub fn log_request<T>(request: RpcRequest<T>, path: &str) -> (Option<String>, T)
+pub fn debug_request<T>(request: RpcRequest<T>, path: &str) -> (Option<String>, T)
 where
     T: Debug,
 {
     let trace_id = retrive_trace_id(&request);
     let req = request.into_inner();
     tracing::info!("request - {:?}, method - {}", &req, path);
+    (trace_id, req)
+}
+
+pub fn display_request<T>(request: RpcRequest<T>, path: &str) -> (Option<String>, T)
+where
+    T: Display,
+{
+    let trace_id = retrive_trace_id(&request);
+    let req = request.into_inner();
+    tracing::info!("request - {}, method - {}", &req, path);
     (trace_id, req)
 }
