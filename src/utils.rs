@@ -192,6 +192,7 @@ pub mod codec {
     int_to_hex!(u64, 8, u64_to_hex);
     int_to_hex!(u16, 2, u16_to_hex);
     int_to_hex!(u32, 4, u32_to_hex);
+    int_to_hex!(i64, 8, i64_to_hex);
 
     pub fn u64_to_bcd(val: u64) -> [u8; 8] {
         let mut v = val.to_string();
@@ -307,6 +308,7 @@ pub fn exponential_backoff(times: u32) -> Duration {
 
 //     &nodes[0]
 // }
+
 
 pub struct I64IdGenerator(AtomicI64);
 
