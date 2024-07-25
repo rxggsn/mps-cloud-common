@@ -1,6 +1,17 @@
 use std::{io, time::Duration};
+use std::io::Error;
+use std::net::SocketAddr;
+use std::pin::{pin, Pin};
+use std::task::{Context, Poll};
 
-use redis::{AsyncCommands, AsyncIter, FromRedisValue, RedisError, ToRedisArgs};
+use futures::executor::block_on;
+use redis::{
+    AsyncCommands, AsyncIter, ConnectionAddr, ConnectionInfo, FromRedisValue, IntoConnectionInfo,
+    RedisError, ToRedisArgs,
+};
+use redis::aio::MultiplexedConnection;
+use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
+use tokio::net::{lookup_host, TcpStream};
 
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct RedisConf {
@@ -27,7 +38,7 @@ impl Default for RedisConf {
 
 #[derive(Clone)]
 pub struct Redis {
-    inner: redis::aio::MultiplexedConnection,
+    inner: MultiplexedConnection,
 }
 
 impl Redis {
@@ -159,16 +170,16 @@ impl RedisConf {
             6379
         };
         let addr = if self.tls {
-            redis::ConnectionAddr::TcpTls {
+            ConnectionAddr::TcpTls {
                 host: host.clone(),
                 port,
                 insecure: false,
             }
         } else {
-            redis::ConnectionAddr::Tcp(host.clone(), port)
+            ConnectionAddr::Tcp(host.clone(), port)
         };
 
-        let info = redis::ConnectionInfo {
+        let info = ConnectionInfo {
             addr,
             redis: redis::RedisConnectionInfo {
                 db: self.db,
@@ -176,21 +187,272 @@ impl RedisConf {
                 password: self.password.clone(),
             },
         };
-        let cli = redis::Client::open(info).expect("open redis client failed");
+        let connection_info = info
+            .into_connection_info()
+            .expect("parse redis connection info failed");
+        let stream = ReconnectTokioStream::connect(&connection_info)
+            .await
+            .expect("connect redis failed");
         match tokio::time::timeout(
             Duration::from_secs(self.connect_timeout),
-            cli.get_multiplexed_tokio_connection(),
+            MultiplexedConnection::new(&connection_info.redis, stream),
         )
         .await
         {
             Ok(r) => match r {
-                Ok(inner) => Redis { inner },
+                Ok((inner, driver)) => {
+                    tokio::spawn(driver);
+                    Redis { inner }
+                }
                 Err(err) => panic!("{}", err),
             },
             Err(_) => panic!(
                 "{}",
-                io::Error::new(io::ErrorKind::TimedOut, "connect redis timeout",)
+                Error::new(io::ErrorKind::TimedOut, "connect redis timeout",)
             ),
         }
+    }
+}
+
+struct ReconnectTokioStream {
+    connection_addr: SocketAddr,
+    stream: TcpStream,
+}
+
+impl AsyncRead for ReconnectTokioStream {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let stream = self.get_mut();
+        let pinned = pin!(&mut stream.stream);
+        match pinned.poll_read(cx, buf) {
+            Poll::Ready(r) => match r {
+                Ok(size) => Poll::Ready(Ok(size)),
+                Err(err) => match err.kind() {
+                    io::ErrorKind::BrokenPipe => {
+                        if let Err(err) = block_on(stream.reconnect()) {
+                            Poll::Ready(Err(err))
+                        } else {
+                            let pinned = pin!(&mut stream.stream);
+                            pinned.poll_read(cx, buf)
+                        }
+                    }
+                    _ => Poll::Ready(Err(err)),
+                },
+            },
+            Poll::Pending => Poll::Pending,
+        }
+    }
+}
+
+impl AsyncWrite for ReconnectTokioStream {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<Result<usize, Error>> {
+        let stream = self.get_mut();
+        let pinned = pin!(&mut stream.stream);
+        match pinned.poll_write(cx, buf) {
+            Poll::Ready(r) => match r {
+                Ok(size) => Poll::Ready(Ok(size)),
+                Err(err) => match err.kind() {
+                    io::ErrorKind::BrokenPipe => {
+                        if let Err(err) = block_on(stream.reconnect()) {
+                            Poll::Ready(Err(err))
+                        } else {
+                            let pinned: Pin<&mut _> = pin!(&mut stream.stream);
+                            pinned.poll_write(cx, buf)
+                        }
+                    }
+                    _ => Poll::Ready(Err(err)),
+                },
+            },
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        let stream = self.get_mut();
+        let pinned = pin!(&mut stream.stream);
+        match pinned.poll_flush(cx) {
+            Poll::Ready(r) => match r {
+                Ok(_) => Poll::Ready(Ok(())),
+                Err(err) => match err.kind() {
+                    io::ErrorKind::BrokenPipe => {
+                        if let Err(err) = block_on(stream.reconnect()) {
+                            Poll::Ready(Err(err))
+                        } else {
+                            let pinned: Pin<&mut _> = pin!(&mut stream.stream);
+                            pinned.poll_flush(cx)
+                        }
+                    }
+                    _ => Poll::Ready(Err(err)),
+                },
+            },
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Result<(), Error>> {
+        let stream = self.get_mut();
+        let pinned = pin!(&mut stream.stream);
+        pinned.poll_shutdown(cx)
+    }
+}
+
+impl ReconnectTokioStream {
+    async fn connect(addr: &ConnectionInfo) -> io::Result<Self> {
+        match addr.addr {
+            ConnectionAddr::Tcp(ref hostname, port) => {
+                let socketaddr = get_socket_addrs(hostname.as_str(), port).await?;
+                let stream = TcpStream::connect(&socketaddr).await?;
+                Ok(Self {
+                    stream,
+                    connection_addr: socketaddr,
+                })
+            }
+            _ => Err(Error::new(
+                io::ErrorKind::Unsupported,
+                "unsupported connection type",
+            )),
+        }
+    }
+
+    async fn reconnect(&mut self) -> io::Result<()> {
+        self.stream = TcpStream::connect(&self.connection_addr).await?;
+        Ok(())
+    }
+}
+
+async fn get_socket_addrs(host: &str, port: u16) -> io::Result<SocketAddr> {
+    let mut socket_addrs = lookup_host((host, port)).await?;
+    match socket_addrs.next() {
+        Some(socket_addr) => Ok(socket_addr),
+        None => Err(Error::new(
+            io::ErrorKind::AddrNotAvailable,
+            "No address found for host",
+        )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use redis::{ConnectionAddr, ConnectionInfo};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
+    use tokio::sync::mpsc;
+
+    use crate::redisx::{ReconnectTokioStream, RedisConf};
+
+    const PORT: u16 = 5479;
+
+    enum Command {
+        ShutdownService,
+        ShutdownAll,
+        Restart,
+    }
+    struct ControlPingPang {
+        cmd: mpsc::Receiver<Command>,
+    }
+
+    impl ControlPingPang {
+        async fn start(mut self) {
+            let mut buf = [0u8; 128];
+            'outside: loop {
+                let listener = TcpListener::bind(format!("localhost:{}", PORT))
+                    .await
+                    .expect("msg");
+                let r = listener.accept().await;
+                println!("reconnected");
+
+                let (stream, _) = r.unwrap();
+                let (mut reader, mut writer) = stream.into_split();
+                'inside: loop {
+                    tokio::select! {
+                        cmd_result = self.cmd.recv() => {
+                            match cmd_result {
+                                 Some(Command::ShutdownService) => {
+                                    break  'inside;
+                                },
+                                Some(Command::ShutdownAll) => {
+                                    break 'outside;
+                                },
+                                Some(Command::Restart) => {
+                                    break  'inside;
+                                },
+                                None=> {
+                                    break 'outside;
+                                }
+                            }
+                        },
+                        message_result = reader.read(&mut buf) => {
+                            match message_result {
+                                Ok(size) => {
+                                    if size == 0 {
+                                        break 'inside;
+                                    }
+                                    let val = String::from_utf8(buf.to_vec()).expect("");
+                                    writer.write_all(val.as_bytes()).await.unwrap();
+                                },
+                                Err(_) => {
+                                    break 'inside;
+                                }
+                            }
+                        }
+                    }
+                    buf.fill(0u8)
+                }
+                drop(reader);
+                writer.forget();
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn test_redis_operations() {
+        let conf = RedisConf::default();
+        let mut redis = conf.create().await;
+
+        redis.set("key", "val").await.unwrap();
+        let val: String = redis.get("key").await.unwrap();
+        assert_eq!(val, "val");
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_redis_stream_reconnect() {
+        let (tx, rx) = mpsc::channel(10);
+        let control = ControlPingPang { cmd: rx };
+
+        tokio::spawn(control.start());
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let connection_info = ConnectionInfo {
+            addr: ConnectionAddr::Tcp("localhost".to_string(), PORT),
+            redis: Default::default(),
+        };
+
+        let mut stream = ReconnectTokioStream::connect(&connection_info)
+            .await
+            .expect("msg");
+
+        stream.write_all("ping".as_bytes()).await.unwrap();
+        let mut buf = [0u8; 64];
+        stream.read(&mut buf).await.unwrap();
+        let val = String::from_utf8(buf.to_vec()).expect("");
+        assert_eq!(val.replace("\0", ""), "ping");
+
+        stream.reconnect().await.expect("msg");
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        stream.write_all("ping".as_bytes()).await.unwrap();
+        let mut buf = [0u8; 64];
+        stream.read(&mut buf).await.unwrap();
+        let val = String::from_utf8(buf.to_vec()).expect("");
+        assert_eq!(val.replace("\0", ""), "ping");
     }
 }
