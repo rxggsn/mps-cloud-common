@@ -132,6 +132,31 @@ impl Kv for RocksKv {
         self.db.delete(key).map_err(|err| err.into())
     }
 
+    fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<bytes::Bytes>, DBError> {
+        let mut group_errs = vec![];
+        let results = self
+            .db
+            .prefix_iterator(prefix)
+            .map(|result| {
+                result
+                    .map(|(_, v)| bytes::Bytes::copy_from_slice(&*v))
+                    .map_err(|err| group_errs.push(err.into()))
+            })
+            .filter(|r| r.is_ok())
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+
+        if group_errs.is_empty() {
+            Ok(results)
+        } else {
+            Err(DBError::Group(group_errs))
+        }
+    }
+
+    fn maybe_contains<K: AsRef<[u8]>>(&self, key: &K) -> Result<bool, DBError> {
+        Ok(self.db.key_may_exist(key))
+    }
+
     fn list_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
         let mut group_errs = vec![];
 
@@ -143,7 +168,7 @@ impl Kv for RocksKv {
         let mut results = self
             .db
             .iterator_opt(
-                rocksdb::IteratorMode::From(keys[0].as_ref(), rocksdb::Direction::Forward),
+                IteratorMode::From(keys[0].as_ref(), Direction::Forward),
                 opt,
             )
             .filter(|r| match r {
@@ -182,31 +207,6 @@ impl Kv for RocksKv {
         }
     }
 
-    fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<bytes::Bytes>, DBError> {
-        let mut group_errs = vec![];
-        let results = self
-            .db
-            .prefix_iterator(prefix)
-            .map(|result| {
-                result
-                    .map(|(_, v)| bytes::Bytes::copy_from_slice(&*v))
-                    .map_err(|err| group_errs.push(err.into()))
-            })
-            .filter(|r| r.is_ok())
-            .map(|r| r.unwrap())
-            .collect::<Vec<_>>();
-
-        if group_errs.is_empty() {
-            Ok(results)
-        } else {
-            Err(DBError::Group(group_errs))
-        }
-    }
-
-    fn maybe_contains<K: AsRef<[u8]>>(&self, key: &K) -> Result<bool, DBError> {
-        Ok(self.db.key_may_exist(key))
-    }
-
     fn get_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<Option<bytes::Bytes>, DBError> {
         match self.cf_handle(cf) {
             Some(cf) => self
@@ -234,6 +234,7 @@ impl Kv for RocksKv {
         cf: &str,
         prefix: K,
     ) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+        let pre = prefix.as_ref().to_vec();
         match self.cf_handle(cf) {
             Some(cf) => self
                 .db
@@ -242,6 +243,13 @@ impl Kv for RocksKv {
                     result
                         .map(|(k, v)| ((*k).to_vec(), bytes::Bytes::copy_from_slice(&v)))
                         .map_err(|err| err.into())
+                })
+                .filter(|result| {
+                    result.is_ok()
+                        && result
+                            .as_ref()
+                            .map(|(k, _)| k.len() >= pre.len() && &k[..pre.len()] == &pre)
+                            .unwrap_or_default()
                 })
                 .collect(),
             None => Ok(vec![]),
@@ -640,7 +648,7 @@ impl From<sled::Error> for DBError {
 #[cfg(test)]
 #[cfg(feature = "rocksdb-enable")]
 mod rocksdbtest {
-    use super::{Options, DB};
+    use super::{DB, Options};
 
     #[test]
     fn test_rocksdb_dbx_crud() {
