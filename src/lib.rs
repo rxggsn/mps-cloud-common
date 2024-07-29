@@ -1,3 +1,5 @@
+extern crate core;
+
 use std::cell::UnsafeCell;
 
 #[cfg(feature = "checksum")]
