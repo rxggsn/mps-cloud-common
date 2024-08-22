@@ -242,7 +242,7 @@ impl<'a> PodWatcher<'a> {
                 pending_pods.remove(&uid);
 
                 match change_tx.send(Change::Remove(pod_name.clone())).await {
-                    Ok(_) => tracing::info!("remove pod: {}", pod_name),
+                    Ok(_) => tracing::debug!("remove pod: {}", pod_name),
                     Err(err) => tracing::debug!("remove pod failed: {}", err),
                 }
             }
