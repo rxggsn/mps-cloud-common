@@ -1,5 +1,5 @@
 use std::{fmt::Display, path::Path, sync::Arc};
-
+use bytes::Bytes;
 #[cfg(feature = "rocksdb-enable")]
 use rocksdb::{Direction, IteratorMode, ReadOptions};
 
@@ -380,27 +380,7 @@ impl Kv for SledKv {
         self.db.remove(key).map(|_| {}).map_err(|err| err.into())
     }
 
-    fn list_keys(&self, keys: Vec<Vec<u8>>) -> Result<(Vec<u8>, bytes::Bytes), DBError> {
-        let mut group_errs = vec![];
-        let result = self
-            .db
-            .range(keys[0].clone()..keys[keys.len() - 1].clone())
-            .map(|r| {
-                r.map(|(key, v)| (key.to_vec(), bytes::Bytes::copy_from_slice(&v)))
-                    .map_err(|err| group_errs.push(err.into()))
-            })
-            .filter(|r| r.is_ok())
-            .map(|r| r.unwrap())
-            .collect::<Vec<_>>();
-
-        if group_errs.is_empty() {
-            Ok(result)
-        } else {
-            Err(DBError::Group(group_errs))
-        }
-    }
-
-    fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<(Vec<u8>, bytes::Bytes), DBError> {
+    fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
         let mut group_errs = vec![];
 
         let results = self
@@ -423,6 +403,50 @@ impl Kv for SledKv {
 
     fn maybe_contains<K: AsRef<[u8]>>(&self, key: &K) -> Result<bool, DBError> {
         self.db.contains_key(&key).map_err(|err| err.into())
+    }
+
+    fn list_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+        let mut group_errs = vec![];
+        let result = self
+            .db
+            .range(keys[0].clone()..keys[keys.len() - 1].clone())
+            .map(|r| {
+                r.map(|(key, v)| (key.to_vec(), bytes::Bytes::copy_from_slice(&v)))
+                    .map_err(|err| group_errs.push(err.into()))
+            })
+            .filter(|r| r.is_ok())
+            .map(|r| r.unwrap())
+            .collect::<Vec<_>>();
+
+        if group_errs.is_empty() {
+            Ok(result)
+        } else {
+            Err(DBError::Group(group_errs))
+        }
+    }
+
+    fn get_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<Option<Bytes>, DBError> {
+        todo!()
+    }
+
+    fn delete_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<(), DBError> {
+        todo!()
+    }
+
+    fn list_prefix_cf<K: AsRef<[u8]>>(&self, cf: &str, prefix: K) -> Result<Vec<(Vec<u8>, Bytes)>, DBError> {
+        todo!()
+    }
+
+    fn put_cf<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, cf: &str, key: K, value: V) -> Result<Option<Bytes>, DBError> {
+        todo!()
+    }
+
+    fn maybe_exist_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<bool, DBError> {
+        todo!()
+    }
+
+    fn list_keys_cf<K: AsRef<[u8]>>(&self, cf: &str, keys: &[K]) -> Result<Vec<(Vec<u8>, Bytes)>, DBError> {
+        todo!()
     }
 }
 
