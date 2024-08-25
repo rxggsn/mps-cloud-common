@@ -98,21 +98,21 @@ where
     result
 }
 
-pub fn read<'a, T>(rwlock: &'a RwLock<T>) -> RwLockReadGuard<'a, T> {
+pub fn read<T>(rwlock: &RwLock<T>) -> RwLockReadGuard<T> {
     rwlock.read().unwrap_or_else(|e| {
         rwlock.clear_poison();
         e.into_inner()
     })
 }
 
-pub fn write<'a, T>(rwlock: &'a RwLock<T>) -> RwLockWriteGuard<'a, T> {
+pub fn write<T>(rwlock: &RwLock<T>) -> RwLockWriteGuard<T> {
     rwlock.write().unwrap_or_else(|e| {
         rwlock.clear_poison();
         e.into_inner()
     })
 }
 
-pub fn mutex<'a, T>(mutex: &'a Mutex<T>) -> MutexGuard<'a, T> {
+pub fn mutex<T>(mutex: &Mutex<T>) -> MutexGuard<T> {
     mutex.lock().unwrap_or_else(|e| {
         mutex.clear_poison();
         e.into_inner()
