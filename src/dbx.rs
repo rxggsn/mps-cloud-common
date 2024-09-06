@@ -1,41 +1,55 @@
 use std::{fmt::Display, path::Path, sync::Arc};
+
 use bytes::Bytes;
 #[cfg(feature = "rocksdb-enable")]
 use rocksdb::{Direction, IteratorMode, ReadOptions};
 
+#[cfg(feature = "sled-enable")]
 static GB_SIZE: u64 = 1 << 30;
+#[cfg(feature = "sled-enable")]
 static MB_SIZE: u64 = 1 << 20;
+#[cfg(feature = "sled-enable")]
 static KB_SIZE: u64 = 1 << 10;
 
 #[derive(Debug, serde::Deserialize, Clone)]
 #[serde(tag = "type", content = "value")]
+#[cfg(feature = "sled-enable")]
 pub enum CacheSize {
     Gb(u32),
     Mb(u64),
     Kb(u64),
 }
+
+#[cfg(feature = "sled-enable")]
 impl CacheSize {
     fn to_byte(&self) -> u64 {
         match self {
             CacheSize::Gb(size) => *size as u64 * GB_SIZE,
-            CacheSize::Mb(size) => *size as u64 * MB_SIZE,
-            CacheSize::Kb(size) => *size as u64 * KB_SIZE,
+            CacheSize::Mb(size) => *size * MB_SIZE,
+            CacheSize::Kb(size) => *size * KB_SIZE,
         }
     }
 }
 
+#[cfg(feature = "sled-enable")]
+impl Default for CacheSize {
+    fn default() -> Self {
+        CacheSize::Mb(50)
+    }
+}
+
 pub trait Kv: Clone + Send + Sync {
-    fn get<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<bytes::Bytes>, DBError>;
+    fn get<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<Vec<u8>>, DBError>;
 
     fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(
         &self,
         key: K,
         value: V,
-    ) -> Result<Option<bytes::Bytes>, DBError>;
+    ) -> Result<Option<Vec<u8>>, DBError>;
 
     fn delete<K: AsRef<[u8]>>(&self, key: K) -> Result<(), DBError>;
 
-    fn list<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+    fn list<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError> {
         if keys.is_empty() {
             return Ok(vec![]);
         }
@@ -57,13 +71,13 @@ pub trait Kv: Clone + Send + Sync {
         self.list_keys(keys)
     }
 
-    fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<bytes::Bytes>, DBError>;
+    fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<Vec<u8>>, DBError>;
 
     fn maybe_contains<K: AsRef<[u8]>>(&self, key: &K) -> Result<bool, DBError>;
 
-    fn list_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError>;
+    fn list_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError>;
 
-    fn get_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<Option<bytes::Bytes>, DBError>;
+    fn get_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<Option<Vec<u8>>, DBError>;
 
     fn delete_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<(), DBError>;
 
@@ -71,7 +85,7 @@ pub trait Kv: Clone + Send + Sync {
         &self,
         cf: &str,
         prefix: K,
-    ) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError>;
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError>;
 
     fn put_cf<K: AsRef<[u8]>, V: AsRef<[u8]>>(
         &self,
@@ -86,7 +100,7 @@ pub trait Kv: Clone + Send + Sync {
         &self,
         cf: &str,
         keys: &[K],
-    ) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError>;
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError>;
 }
 
 #[cfg(feature = "rocksdb-enable")]
@@ -110,18 +124,15 @@ impl RocksKv {
 
 #[cfg(feature = "rocksdb-enable")]
 impl Kv for RocksKv {
-    fn get<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<bytes::Bytes>, DBError> {
-        self.db
-            .get(key)
-            .map(|v| v.map(|v| bytes::Bytes::copy_from_slice(&v)))
-            .map_err(|err| err.into())
+    fn get<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<Vec<u8>>, DBError> {
+        self.db.get(key).map_err(|err| err.into())
     }
 
     fn put<K: AsRef<[u8]>, V: AsRef<[u8]>>(
         &self,
         key: K,
         value: V,
-    ) -> Result<Option<bytes::Bytes>, DBError> {
+    ) -> Result<Option<Vec<u8>>, DBError> {
         self.db
             .put(key, value)
             .map(|_| None)
@@ -132,14 +143,14 @@ impl Kv for RocksKv {
         self.db.delete(key).map_err(|err| err.into())
     }
 
-    fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<bytes::Bytes>, DBError> {
+    fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<Vec<u8>>, DBError> {
         let mut group_errs = vec![];
         let results = self
             .db
             .prefix_iterator(prefix)
             .map(|result| {
                 result
-                    .map(|(_, v)| bytes::Bytes::copy_from_slice(&*v))
+                    .map(|(_, v)| (*v).to_vec())
                     .map_err(|err| group_errs.push(err.into()))
             })
             .filter(|r| r.is_ok())
@@ -157,7 +168,7 @@ impl Kv for RocksKv {
         Ok(self.db.key_may_exist(key))
     }
 
-    fn list_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+    fn list_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError> {
         let mut group_errs = vec![];
 
         let mut opt = rocksdb::ReadOptions::default();
@@ -183,7 +194,7 @@ impl Kv for RocksKv {
             })
             .map(|result| {
                 result
-                    .map(|(key, v)| ((*key).to_vec(), bytes::Bytes::copy_from_slice(&*v)))
+                    .map(|(key, v)| ((*key).to_vec(), (*v).to_vec()))
                     .map_err(|err| group_errs.push(err.into()))
             })
             .filter(|r| r.is_ok())
@@ -195,7 +206,7 @@ impl Kv for RocksKv {
             .get(&keys[keys.len() - 1])
             .map(|opt| {
                 opt.into_iter().for_each(|value| {
-                    results.push((keys[keys.len() - 1].clone(), bytes::Bytes::from_iter(value)));
+                    results.push((keys[keys.len() - 1].clone(), value));
                 })
             })
             .map_err(|err| group_errs.push(err.into()));
@@ -207,13 +218,9 @@ impl Kv for RocksKv {
         }
     }
 
-    fn get_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<Option<bytes::Bytes>, DBError> {
+    fn get_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<Option<Vec<u8>>, DBError> {
         match self.cf_handle(cf) {
-            Some(cf) => self
-                .db
-                .get_cf(cf, key)
-                .map(|v| v.map(|v| bytes::Bytes::copy_from_slice(&v)))
-                .map_err(|err| err.into()),
+            Some(cf) => self.db.get_cf(cf, key).map_err(|err| err.into()),
             None => Ok(None),
         }
     }
@@ -233,7 +240,7 @@ impl Kv for RocksKv {
         &self,
         cf: &str,
         prefix: K,
-    ) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError> {
         let pre = prefix.as_ref().to_vec();
         match self.cf_handle(cf) {
             Some(cf) => self
@@ -241,7 +248,7 @@ impl Kv for RocksKv {
                 .prefix_iterator_cf(cf, prefix)
                 .map(|result| {
                     result
-                        .map(|(k, v)| ((*k).to_vec(), bytes::Bytes::copy_from_slice(&v)))
+                        .map(|(k, v)| ((*k).to_vec(), (*v).to_vec()))
                         .map_err(|err| err.into())
                 })
                 .filter(|result| {
@@ -283,7 +290,7 @@ impl Kv for RocksKv {
         &self,
         cf: &str,
         keys: &[K],
-    ) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError> {
         if keys.is_empty() {
             return Ok(vec![]);
         }
@@ -320,7 +327,7 @@ impl Kv for RocksKv {
                             }
 
                             if keys[offset] == key {
-                                Some((key.to_vec(), bytes::Bytes::copy_from_slice(&*value)))
+                                Some((key.to_vec(), (*value).to_vec()))
                             } else {
                                 None
                             }
@@ -338,10 +345,7 @@ impl Kv for RocksKv {
                     .get_cf(cf, &keys[keys.len() - 1])
                     .map(|opt| {
                         opt.into_iter().for_each(|value| {
-                            kvs.push((
-                                keys[keys.len() - 1].clone(),
-                                bytes::Bytes::from_iter(value),
-                            ));
+                            kvs.push((keys[keys.len() - 1].clone(), value));
                         })
                     })
                     .map_err(|err| errors.push(err.into()));
@@ -358,10 +362,10 @@ impl Kv for RocksKv {
 
 #[cfg(feature = "sled-enable")]
 impl Kv for SledKv {
-    fn get<T: AsRef<[u8]>>(&self, key: &T) -> Result<Option<bytes::Bytes>, DBError> {
+    fn get<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<Vec<u8>>, DBError> {
         self.db
             .get(key)
-            .map(|v| v.map(|v| bytes::Bytes::copy_from_slice(&v)))
+            .map(|v| v.map(|v| v.to_vec()))
             .map_err(|err| err.into())
     }
 
@@ -369,10 +373,10 @@ impl Kv for SledKv {
         &self,
         key: K,
         value: V,
-    ) -> Result<Option<bytes::Bytes>, DBError> {
+    ) -> Result<Option<Vec<u8>>, DBError> {
         self.db
             .insert(key, value.as_ref())
-            .map(|v| v.map(|v| bytes::Bytes::copy_from_slice(&v)))
+            .map(|v| v.map(|v| v.to_vec()))
             .map_err(|err| err.into())
     }
 
@@ -380,18 +384,18 @@ impl Kv for SledKv {
         self.db.remove(key).map(|_| {}).map_err(|err| err.into())
     }
 
-    fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+    fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<Vec<u8>>, DBError> {
         let mut group_errs = vec![];
 
         let results = self
             .db
             .scan_prefix(prefix)
             .map(|r| {
-                r.map(|(key, v)| (key.to_vec(), bytes::Bytes::copy_from_slice(&v)))
+                r.map(|(key, v)| (key.to_vec(), v.to_vec()))
                     .map_err(|err| group_errs.push(err.into()))
             })
             .filter(|r| r.is_ok())
-            .map(|r| r.unwrap())
+            .map(|r| r.unwrap().1)
             .collect::<Vec<_>>();
 
         if group_errs.is_empty() {
@@ -405,13 +409,13 @@ impl Kv for SledKv {
         self.db.contains_key(&key).map_err(|err| err.into())
     }
 
-    fn list_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+    fn list_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError> {
         let mut group_errs = vec![];
         let result = self
             .db
             .range(keys[0].clone()..keys[keys.len() - 1].clone())
             .map(|r| {
-                r.map(|(key, v)| (key.to_vec(), bytes::Bytes::copy_from_slice(&v)))
+                r.map(|(key, v)| (key.to_vec(), v.to_vec()))
                     .map_err(|err| group_errs.push(err.into()))
             })
             .filter(|r| r.is_ok())
@@ -425,7 +429,7 @@ impl Kv for SledKv {
         }
     }
 
-    fn get_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<Option<Bytes>, DBError> {
+    fn get_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<Option<Vec<u8>>, DBError> {
         todo!()
     }
 
@@ -433,11 +437,20 @@ impl Kv for SledKv {
         todo!()
     }
 
-    fn list_prefix_cf<K: AsRef<[u8]>>(&self, cf: &str, prefix: K) -> Result<Vec<(Vec<u8>, Bytes)>, DBError> {
+    fn list_prefix_cf<K: AsRef<[u8]>>(
+        &self,
+        cf: &str,
+        prefix: K,
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError> {
         todo!()
     }
 
-    fn put_cf<K: AsRef<[u8]>, V: AsRef<[u8]>>(&self, cf: &str, key: K, value: V) -> Result<Option<Bytes>, DBError> {
+    fn put_cf<K: AsRef<[u8]>, V: AsRef<[u8]>>(
+        &self,
+        cf: &str,
+        key: K,
+        value: V,
+    ) -> Result<Option<Bytes>, DBError> {
         todo!()
     }
 
@@ -445,7 +458,11 @@ impl Kv for SledKv {
         todo!()
     }
 
-    fn list_keys_cf<K: AsRef<[u8]>>(&self, cf: &str, keys: &[K]) -> Result<Vec<(Vec<u8>, Bytes)>, DBError> {
+    fn list_keys_cf<K: AsRef<[u8]>>(
+        &self,
+        cf: &str,
+        keys: &[K],
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError> {
         todo!()
     }
 }
@@ -456,15 +473,16 @@ pub type DB = DBWithInnerKvStore<RocksKv>;
 #[cfg(feature = "sled-enable")]
 pub type DB = DBWithInnerKvStore<SledKv>;
 
-#[cfg(feature = "rocksdb-enable")]
 #[derive(Default)]
 pub struct Options {
-    pub cache_size: Option<CacheSize>,
+    #[cfg(feature = "sled-enable")]
+    pub cache_size: CacheSize,
+    #[cfg(feature = "rocksdb-enable")]
     pub prefix: Option<usize>,
 }
 
-#[cfg(feature = "rocksdb-enable")]
 impl Options {
+    #[cfg(feature = "rocksdb-enable")]
     pub fn fixed_prefix_length(&mut self, prefix: usize) {
         self.prefix = Some(prefix);
     }
@@ -543,7 +561,7 @@ impl DBWithInnerKvStore<SledKv> {
 }
 
 impl<Inner: Kv> DBWithInnerKvStore<Inner> {
-    pub fn get<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<bytes::Bytes>, DBError> {
+    pub fn get<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<Vec<u8>>, DBError> {
         self.db.get(key)
     }
 
@@ -551,7 +569,7 @@ impl<Inner: Kv> DBWithInnerKvStore<Inner> {
         &self,
         key: K,
         value: V,
-    ) -> Result<Option<bytes::Bytes>, DBError> {
+    ) -> Result<Option<Vec<u8>>, DBError> {
         self.db.put(key, value)
     }
 
@@ -559,14 +577,11 @@ impl<Inner: Kv> DBWithInnerKvStore<Inner> {
         self.db.delete(key)
     }
 
-    pub fn list<K: AsRef<[u8]>>(
-        &self,
-        keys: &[K],
-    ) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+    pub fn list<K: AsRef<[u8]>>(&self, keys: &[K]) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError> {
         self.db.list(keys)
     }
 
-    pub fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<bytes::Bytes>, DBError> {
+    pub fn list_prefix<K: AsRef<[u8]>>(&self, prefix: K) -> Result<Vec<Vec<u8>>, DBError> {
         self.db.list_prefix(prefix)
     }
 
@@ -574,11 +589,7 @@ impl<Inner: Kv> DBWithInnerKvStore<Inner> {
         self.db.maybe_contains(key)
     }
 
-    pub fn get_cf<K: AsRef<[u8]>>(
-        &self,
-        cf: &str,
-        key: K,
-    ) -> Result<Option<bytes::Bytes>, DBError> {
+    pub fn get_cf<K: AsRef<[u8]>>(&self, cf: &str, key: K) -> Result<Option<Vec<u8>>, DBError> {
         self.db.get_cf(cf, key)
     }
 
@@ -590,7 +601,7 @@ impl<Inner: Kv> DBWithInnerKvStore<Inner> {
         &self,
         cf: &str,
         prefix: K,
-    ) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError> {
         self.db.list_prefix_cf(cf, prefix)
     }
 
@@ -599,7 +610,7 @@ impl<Inner: Kv> DBWithInnerKvStore<Inner> {
         cf: &str,
         key: K,
         value: V,
-    ) -> Result<Option<bytes::Bytes>, DBError> {
+    ) -> Result<Option<Bytes>, DBError> {
         self.db.put_cf(cf, key, value)
     }
 
@@ -611,7 +622,7 @@ impl<Inner: Kv> DBWithInnerKvStore<Inner> {
         &self,
         cf: &str,
         keys: &[K],
-    ) -> Result<Vec<(Vec<u8>, bytes::Bytes)>, DBError> {
+    ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, DBError> {
         self.db.list_keys_cf(cf, keys)
     }
 }
