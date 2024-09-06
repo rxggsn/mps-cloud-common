@@ -18,4 +18,4 @@ run_test() {
 
 cargo check --features full,rocksdb-enable
 
-run_test Cargo.toml 2
+run_test Cargo.toml 1
