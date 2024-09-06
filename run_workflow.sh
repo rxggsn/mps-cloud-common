@@ -7,7 +7,7 @@ run_test() {
     status_code=$?
     if [ "$status_code" = 101 ]
     then
-        cargo test --manifest-path "$manifest_path" --features full,rocksdb-enable --no-fail-fast -- --test-threads=$threads
+        cargo test --manifest-path "$manifest_path" --features full,rocksdb-enable -- --test-threads=$threads
         status_code=$?
         if [ "$status_code" = 101 ]
         then
