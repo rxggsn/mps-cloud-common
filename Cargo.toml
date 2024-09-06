@@ -43,12 +43,16 @@ kube = { version = "0.85.0", features = ["runtime", "derive"], optional = true }
 k8s-openapi = { version = "0.19.0", features = ["v1_27"], optional = true }
 tower = { version = "0.4.13", optional = true }
 rand = "0.8.5"
+rocksdb = { version = "0.21.0", optional = true, default-features = false, features = [
+    "lz4",
+] }
+sled = { version = "0.34", optional = true }
 
 [dependencies.uuid]
 version = "1.2.1"
 features = [
-    "v4",                # Lets you generate random UUIDs
-    "fast-rng",          # Use a faster (but still sufficiently random) RNG
+    "v4", # Lets you generate random UUIDs
+    "fast-rng", # Use a faster (but still sufficiently random) RNG
     "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
 ]
 
@@ -93,14 +97,17 @@ full = [
     "crypto",
     "checksum",
     "concurrency",
+    "dbx"
 ]
 default = ["futures"]
 crypto = ["aes", "ctr"]
 checksum = ["crc"]
 concurrency = []
+dbx = []
+rocksdb-enable = ["rocksdb"]
+sled-enable = ["sled"]
 
 [dev-dependencies]
-common = { path = ".", features = ["full"] }
 tokio-stream = { version = "0.1.12" }
 tonic = { version = "0.10" }
 prost = "0.12"

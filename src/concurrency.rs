@@ -1,3 +1,5 @@
+use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
 use futures::{Future, FutureExt};
 use tokio::sync::watch::{Receiver, Ref};
 use tonic::async_trait;
@@ -94,4 +96,88 @@ where
     }
 
     result
+}
+
+pub fn read<T>(rwlock: &RwLock<T>) -> RwLockReadGuard<T> {
+    rwlock.read().unwrap_or_else(|e| {
+        rwlock.clear_poison();
+        e.into_inner()
+    })
+}
+
+pub fn write<T>(rwlock: &RwLock<T>) -> RwLockWriteGuard<T> {
+    rwlock.write().unwrap_or_else(|e| {
+        rwlock.clear_poison();
+        e.into_inner()
+    })
+}
+
+pub fn mutex<T>(mutex: &Mutex<T>) -> MutexGuard<T> {
+    mutex.lock().unwrap_or_else(|e| {
+        mutex.clear_poison();
+        e.into_inner()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+
+    use std::{
+        sync::{Arc, RwLock},
+        thread,
+    };
+
+    #[test]
+    fn test_read() {
+        let rwlock = Arc::new(RwLock::new(1));
+        let c_rwlock = Arc::clone(&rwlock);
+        let val = super::read(&rwlock);
+        assert_eq!(*val, 1);
+        assert_eq!(rwlock.is_poisoned(), false);
+        drop(val);
+
+        thread::spawn(move || {
+            let mut val = super::write(&c_rwlock);
+            *val = 2;
+            panic!("")
+        })
+        .join()
+        .unwrap_err();
+
+        assert_eq!(rwlock.is_poisoned(), true);
+        let val = super::read(&rwlock);
+        assert_eq!(*val, 2);
+        assert_eq!(rwlock.is_poisoned(), false);
+    }
+
+    #[test]
+    fn test_write() {
+        let rwlock = Arc::new(RwLock::new(1));
+        let c_rwlock = Arc::clone(&rwlock);
+        {
+            let mut val = super::write(&c_rwlock);
+            *val = 2;
+        }
+
+        {
+            let val = super::read(&rwlock);
+            assert_eq!(*val, 2);
+            assert_eq!(rwlock.is_poisoned(), false);
+        }
+
+        thread::spawn(move || {
+            let mut val = super::write(&c_rwlock);
+            *val = 3;
+            panic!("")
+        })
+        .join()
+        .unwrap_err();
+
+        {
+            assert_eq!(rwlock.is_poisoned(), true);
+            let val = super::read(&rwlock);
+            assert_eq!(*val, 3);
+            assert_eq!(rwlock.is_poisoned(), false);
+        }
+    }
 }

@@ -349,7 +349,7 @@ mod tests {
 
     use crate::redisx::{ReconnectTokioStream, RedisConf};
 
-    const PORT: u16 = 5479;
+    const PORT: u16 = 6379;
 
     enum Command {
         ShutdownService,
