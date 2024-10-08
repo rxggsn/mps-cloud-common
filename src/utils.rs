@@ -329,11 +329,11 @@ mod tests {
     use std::{env, thread};
 
     use crate::{
+        LOCAL_IP,
         utils::codec::{
             bcd_to_i32, bcd_to_u16, bcd_to_u32, bcd_to_u64, hex_to_i32, hex_to_u32, hex_to_u64,
             u64_to_hex,
         },
-        LOCAL_IP,
     };
 
     use super::{
