@@ -5,6 +5,7 @@ use std::pin::{pin, Pin};
 use std::task::{Context, Poll};
 
 use futures::executor::block_on;
+use futures::TryStreamExt;
 use redis::{
     AsyncCommands, AsyncIter, ConnectionAddr, ConnectionInfo, FromRedisValue, IntoConnectionInfo,
     RedisError, ToRedisArgs,
@@ -153,6 +154,35 @@ impl Redis {
         val: V,
     ) -> Result<(), RedisError> {
         self.inner.srem(key, val).await
+    }
+
+    pub async fn hset_nx<
+        K: ToRedisArgs + Send + Sync,
+        F: ToRedisArgs + Send + Sync,
+        V: ToRedisArgs + Send + Sync,
+    >(
+        &mut self,
+        key: K,
+        field: F,
+        val: V,
+    ) -> Result<bool, RedisError> {
+        self.inner.hset_nx(key, field, val).await
+    }
+
+    pub async fn expire<K: ToRedisArgs + Send + Sync>(
+        &mut self,
+        key: K,
+        seconds: usize,
+    ) -> Result<(), RedisError> {
+        self.inner.expire(key, seconds).await
+    }
+
+    pub async fn set_nx<K: ToRedisArgs + Send + Sync, V: ToRedisArgs + Send + Sync>(
+        &mut self,
+        key: K,
+        val: V,
+    ) -> Result<bool, RedisError> {
+        self.inner.set_nx(key, val).await
     }
 }
 
