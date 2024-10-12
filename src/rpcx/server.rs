@@ -10,7 +10,7 @@ use hyper::Body;
 use tonic::{body::BoxBody, transport::NamedService};
 use tower_service::Service;
 
-use crate::{rpcx::retrive_trace_id, GRPC_SPAN_ID, GRPC_TRACE_ID, LOG_SPAN_ID, LOG_TRACE_ID};
+use crate::{GRPC_SPAN_ID, GRPC_TRACE_ID, LOG_SPAN_ID, LOG_TRACE_ID, rpcx::retrive_trace_id};
 
 use super::RpcRequest;
 
@@ -81,5 +81,15 @@ where
     let trace_id = retrive_trace_id(&request);
     let req = request.into_inner();
     tracing::debug!("request - {}, method - {}", &req, path);
+    (trace_id, req)
+}
+
+pub fn info_request<T>(request: RpcRequest<T>, path: &str) -> (Option<String>, T)
+where
+    T: Debug,
+{
+    let trace_id = retrive_trace_id(&request);
+    let req = request.into_inner();
+    tracing::info!("request - {:?}, method - {}", &req, path);
     (trace_id, req)
 }
