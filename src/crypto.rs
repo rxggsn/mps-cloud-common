@@ -6,8 +6,14 @@ use aes::{
 };
 use aes_gcm_siv::aead;
 use aes_gcm_siv::aead::{Aead, AeadMut};
+use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use derive_new::new;
+use rand::Rng;
+use rsa::{RsaPrivateKey, RsaPublicKey};
+use rsa::traits::PublicKeyParts;
 
+use crate::ALPHABET;
 use crate::crypto::block_mode::gcm;
 use crate::utils::codec::hex_string_as_slice;
 
@@ -91,7 +97,9 @@ pub enum Crypto {
         public_key: String,
     },
     Sm2 {
-        key: Vec<u8>,
+        private_key: Vec<u8>,
+        public_key: Vec<u8>,
+        account_id: String,
     },
 }
 
@@ -174,18 +182,28 @@ impl Crypto {
     pub fn check_sign(&self, data: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
         match self {
             Crypto::RSA { public_key, .. } => {
-                use rsa::pkcs1::DecodeRsaPublicKey;
-                use rsa::pkcs8::DecodePrivateKey;
-                use rsa::{Pkcs1v15Sign, RsaPublicKey};
+                use rsa::pkcs8::DecodePublicKey;
+                use rsa::{
+                    pkcs1v15::{Signature, VerifyingKey},
+                    signature::Verifier,
+                };
 
-                let public_key = RsaPublicKey::from_pkcs1_pem(&public_key)
-                    .map_err(|err| CryptoError::Pkcs8(err.to_string()))?;
-                public_key
-                    .verify(Pkcs1v15Sign::new(), data, signature)
-                    .map_err(|err| CryptoError::RsaError(err))
+                let verify_key = VerifyingKey::<sha2::Sha256>::from_public_key_pem(&public_key)
+                    .map_err(|err| CryptoError::LoadKeyError(err.to_string()))?;
+                verify_key
+                    .verify(
+                        data,
+                        &Signature::try_from(signature)
+                            .map_err(|err| CryptoError::DSAError(err))?,
+                    )
+                    .map_err(|err| CryptoError::DSAError(err))
                     .map(|_| true)
             }
-            Self::Sm2 { key } => {
+            Self::Sm2 {
+                public_key,
+                account_id,
+                ..
+            } => {
                 use sm2::dsa::signature::Verifier;
 
                 if signature.len() != sm2::dsa::Signature::BYTE_SIZE {
@@ -194,15 +212,15 @@ impl Crypto {
                 let mut sign = [0u8; sm2::dsa::Signature::BYTE_SIZE];
                 sign.copy_from_slice(&signature);
 
-                let mut pub_key = [0u8; 64];
-                pub_key.copy_from_slice(&key[0..64]);
+                let mut pub_key = [0u8; 65];
+                pub_key.copy_from_slice(&public_key[0..65]);
 
-                sm2::dsa::VerifyingKey::from_sec1_bytes("", &pub_key)
-                    .map_err(|err| CryptoError::Sm2Error(err.to_string()))?
+                sm2::dsa::VerifyingKey::from_sec1_bytes(&account_id, &pub_key)
+                    .map_err(|err| CryptoError::LoadKeyError(err.to_string()))?
                     .verify(
                         data,
                         &sm2::dsa::Signature::from_bytes(&sign)
-                            .map_err(|err| CryptoError::Sm2Error(err.to_string()))?,
+                            .map_err(|err| CryptoError::LoadSignatureError(err.to_string()))?,
                     )
                     .map_err(|err| CryptoError::Sm2Error(err.to_string()))
                     .map(|_| true)
@@ -211,27 +229,34 @@ impl Crypto {
         }
     }
 
-    pub fn sign(&self, data: &[u8]) -> Result<bytes::Bytes, CryptoError>{
+    pub fn sign(&self, data: &[u8]) -> Result<bytes::Bytes, CryptoError> {
         match self {
             Crypto::RSA { private_key, .. } => {
                 use rsa::pkcs8::DecodePrivateKey;
-                use rsa::{pkcs1v15::SigningKey, RsaPrivateKey, signature::{SignatureEncoding, Signer}};
-
+                use rsa::{
+                    pkcs1v15::SigningKey,
+                    RsaPrivateKey,
+                    signature::{SignatureEncoding, Signer},
+                };
                 let private_key = RsaPrivateKey::from_pkcs8_pem(&private_key)
-                    .map_err(|err| CryptoError::Pkcs8(err.to_string()))?;
+                    .map_err(|err| CryptoError::LoadKeyError(err.to_string()))?;
                 let signing_key = SigningKey::<sha2::Sha256>::new(private_key);
                 Ok(bytes::Bytes::from(signing_key.sign(data).to_vec()))
             }
-            Self::Sm2 { key } => {
+            Self::Sm2 {
+                private_key,
+                account_id,
+                ..
+            } => {
                 use sm2::dsa::signature::Signer;
                 use sm2::FieldBytes;
 
-                let private_key = FieldBytes::from_slice(&key);
+                let private_key = FieldBytes::from_slice(&private_key);
 
-                sm2::dsa::SigningKey::from_bytes("", private_key)
-                    .map_err(|err| CryptoError::Sm2Error(err.to_string()))?
+                sm2::dsa::SigningKey::from_bytes(&account_id, private_key)
+                    .map_err(|err| CryptoError::LoadSignatureError(err.to_string()))?
                     .try_sign(data)
-                    .map(|v| bytes::Bytes::from(v.to_bytes()))
+                    .map(|v| bytes::Bytes::from(v.to_vec()))
                     .map_err(|err| CryptoError::Sm2Error(err.to_string()))
             }
             _ => Err(CryptoError::CryptoNotSupportSignature),
@@ -258,10 +283,13 @@ pub enum CryptoError {
     CryptoNotSupportEncrypt,
     CryptoNotSupportDecrypt,
     CryptoNotSupportSignature,
-    RsaError(rsa::Error),
+    DSAError(rsa::signature::Error),
     Pkcs8(String),
     Sm2Error(String),
     CorruptedSignature,
+    LoadKeyError(String),
+    LoadSignatureError(String),
+    RsaError(rsa::Error),
 }
 
 impl Display for CryptoError {
@@ -269,16 +297,23 @@ impl Display for CryptoError {
         match self {
             CryptoError::SymmetricCipherError(err) => f.write_fmt(format_args!("{}", err)),
             CryptoError::InvalidLength(err) => f.write_fmt(format_args!("{}", err)),
-            CryptoError::AEADCipherError(err) =>f.write_fmt(format_args!("{}", err)),
+            CryptoError::AEADCipherError(err) => f.write_fmt(format_args!("{}", err)),
             CryptoError::CryptoNotSupportEncrypt => f.write_str("encrypt not support"),
             CryptoError::CryptoNotSupportDecrypt => f.write_str("decrypt not support"),
-            CryptoError::CryptoNotSupportSignature =>  f.write_str("signature not support"),
-            CryptoError::RsaError(err) =>  f.write_fmt(format_args!("{}", err)),
+            CryptoError::CryptoNotSupportSignature => f.write_str("signature not support"),
+            CryptoError::DSAError(err) => f.write_fmt(format_args!("{}", err)),
             CryptoError::Pkcs8(err) => f.write_str(&err),
             CryptoError::Sm2Error(err) => f.write_str(&err),
             CryptoError::CorruptedSignature => f.write_str("corrupted signature"),
+            CryptoError::LoadKeyError(err) => f.write_str(&err),
+            CryptoError::LoadSignatureError(err) => f.write_str(&err),
         }
     }
+}
+
+pub struct KeyPair {
+    pub private_key: String,
+    pub public_key: String,
 }
 
 pub fn pkcs7_padding(data: &mut Vec<u8>, block_size: usize) {
@@ -291,8 +326,64 @@ pub fn pkcs7_unpadding(data: &mut Vec<u8>) {
     data.truncate(data.len() - padding);
 }
 
+pub fn base_64_encode(data: &[u8]) -> String {
+    BASE64_STANDARD.encode(data)
+}
+
+pub fn base_64_decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    BASE64_STANDARD.decode(data.as_bytes())
+}
+
+pub fn new_asymmetric_key_pair(bit_size: usize) -> Result<KeyPair, CryptoError> {
+    use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey};
+    let mut rng = rand::thread_rng();
+    RsaPrivateKey::new(&mut rng, bit_size)
+        .map_err(|err| CryptoError::RsaError(err))
+        .and_then(|k| {
+            let public_key = RsaPublicKey::from(&k);
+            k.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF)
+                .map_err(|err| CryptoError::Pkcs8(err.to_string()))
+                .zip(
+                    public_key
+                        .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
+                        .map_err(|err| CryptoError::Pkcs8(err.to_string())),
+                )
+                .map(|(private_key, pub_key)| KeyPair {
+                    private_key: private_key.to_string(),
+                    public_key: pub_key.to_string(),
+                })
+                .collect()
+        })
+}
+
+pub fn new_key(bit_size: usize) -> Vec<u8> {
+    let key = vec![0u8; bit_size / 8];
+    let characters = ALPHABET.chars();
+    let length = ALPHABET.len();
+    for i in 0..bit_size / 8 {
+        let offset = rand::thread_rng().gen_range(0..length);
+        key[i] = characters[offset] as u8;
+    }
+
+    key
+}
+
+pub fn new_iv() -> Vec<u8> {
+    let key = vec![0u8; 16];
+    let characters = ALPHABET.chars();
+    let length = ALPHABET.len();
+    for i in 0..16 {
+        let offset = rand::thread_rng().gen_range(0..length);
+        key[i] = characters[offset] as u8;
+    }
+
+    key
+}
+
 #[cfg(test)]
 mod tests {
+    use base64::Engine;
+    use base64::prelude::BASE64_STANDARD;
     use hex_literal::hex;
 
     use super::{Crypto, CryptoStates};
@@ -362,6 +453,72 @@ mod tests {
 
     #[test]
     fn test_rsa_sign() {
+        let private_key = include_str!("../examples/rsa/private_key.pem").to_string();
+        let public_key = include_str!("../examples/rsa/public_key.pem").to_string();
+        let actual_signature = include_str!("../examples/rsa/signature").to_string();
 
+        let crypto = Crypto::RSA {
+            private_key,
+            public_key,
+        };
+
+        let data = "123456789abcdefghijk".as_bytes();
+        let sign = crypto.sign(data).expect("");
+        let signature = BASE64_STANDARD.encode(sign);
+        assert_eq!(signature, actual_signature)
+    }
+
+    #[test]
+    fn test_sm2_sign() {
+        let private_key = hex::decode(include_str!("../examples/sm2/private_key.hex")).expect("");
+        let public_key = hex::decode(include_str!("../examples/sm2/public_key.hex")).expect("");
+
+        let crypto = Crypto::Sm2 {
+            private_key,
+            public_key,
+            account_id: "GGSN_RXLIGHT".to_string(),
+        };
+        let data = "123456789abcdefghijk".as_bytes();
+        let sign = crypto.sign(data).expect("");
+
+        assert!(crypto.check_sign(data, &sign).expect(""));
+    }
+    #[test]
+    fn test_rsa_verify_sign() {
+        let private_key = include_str!("../examples/rsa/private_key.pem").to_string();
+        let public_key = include_str!("../examples/rsa/public_key.pem").to_string();
+        let actual_signature = include_str!("../examples/rsa/signature").to_string();
+
+        let crypto = Crypto::RSA {
+            private_key,
+            public_key,
+        };
+        let data = "123456789abcdefghijk".as_bytes();
+        assert!(crypto
+            .check_sign(
+                data,
+                &BASE64_STANDARD
+                    .decode(actual_signature.as_bytes())
+                    .expect("")
+            )
+            .expect(""));
+    }
+
+    #[test]
+    fn test_sm2_verify_sign() {
+        let private_key = hex::decode(include_str!("../examples/sm2/private_key.hex")).expect("");
+        let public_key = hex::decode(include_str!("../examples/sm2/public_key.hex")).expect("");
+        let actual_signature =
+            hex::decode(include_str!("../examples/sm2/signature").replace(" ", "")).expect("");
+
+        let crypto = Crypto::Sm2 {
+            private_key,
+            public_key,
+            account_id: "GGSN_RXLIGHT".to_string(),
+        };
+        let data = b"123456789abcdefghijk";
+        // println!("data: {}", hex::encode(data));
+        // println!("distid: {}", hex::encode(DIST_ID));
+        assert!(crypto.check_sign(data, &actual_signature).expect(""));
     }
 }
