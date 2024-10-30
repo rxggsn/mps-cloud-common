@@ -69,12 +69,12 @@ impl<'a> CryptoStates<'a> {
         self.crypto.encrypt(self.data, self.nonce.as_slice())
     }
 
-    pub fn check_sign(&self, data: &[u8], signature: &[u8]) -> Result<bool, CryptoError> {
-        self.crypto.check_sign(data, signature)
+    pub fn check_sign(&self, signature: &[u8]) -> Result<bool, CryptoError> {
+        self.crypto.check_sign(self.data, signature)
     }
 
-    pub fn sign(&self, data: &[u8]) -> Result<bytes::Bytes, CryptoError> {
-        self.crypto.sign(data)
+    pub fn sign(&self) -> Result<bytes::Bytes, CryptoError> {
+        self.crypto.sign(self.data)
     }
 }
 
@@ -307,6 +307,7 @@ impl Display for CryptoError {
             CryptoError::CorruptedSignature => f.write_str("corrupted signature"),
             CryptoError::LoadKeyError(err) => f.write_str(&err),
             CryptoError::LoadSignatureError(err) => f.write_str(&err),
+            CryptoError::RsaError(err) => f.write_fmt(format_args!("{}", err)),
         }
     }
 }
@@ -343,22 +344,21 @@ pub fn new_asymmetric_key_pair(bit_size: usize) -> Result<KeyPair, CryptoError> 
             let public_key = RsaPublicKey::from(&k);
             k.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF)
                 .map_err(|err| CryptoError::Pkcs8(err.to_string()))
-                .zip(
+                .and_then(|private_key| {
                     public_key
                         .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
-                        .map_err(|err| CryptoError::Pkcs8(err.to_string())),
-                )
-                .map(|(private_key, pub_key)| KeyPair {
-                    private_key: private_key.to_string(),
-                    public_key: pub_key.to_string(),
+                        .map(|public_key| KeyPair {
+                            private_key: private_key.to_string(),
+                            public_key,
+                        })
+                        .map_err(|err| CryptoError::Pkcs8(err.to_string()))
                 })
-                .collect()
         })
 }
 
 pub fn new_key(bit_size: usize) -> Vec<u8> {
-    let key = vec![0u8; bit_size / 8];
-    let characters = ALPHABET.chars();
+    let mut key = vec![0u8; bit_size / 8];
+    let characters = ALPHABET.chars().collect::<Vec<_>>();
     let length = ALPHABET.len();
     for i in 0..bit_size / 8 {
         let offset = rand::thread_rng().gen_range(0..length);
@@ -369,8 +369,8 @@ pub fn new_key(bit_size: usize) -> Vec<u8> {
 }
 
 pub fn new_iv() -> Vec<u8> {
-    let key = vec![0u8; 16];
-    let characters = ALPHABET.chars();
+    let mut key = vec![0u8; 16];
+    let characters = ALPHABET.chars().collect::<Vec<_>>();
     let length = ALPHABET.len();
     for i in 0..16 {
         let offset = rand::thread_rng().gen_range(0..length);
