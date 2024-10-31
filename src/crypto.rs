@@ -89,7 +89,7 @@ pub enum Crypto {
     AesGcmSiv {
         key: Vec<u8>,
     },
-    Sm4GCM {
+    Sm4GcmSiv {
         key: Vec<u8>,
     },
     RSA {
@@ -129,7 +129,7 @@ impl Crypto {
                     Err(CryptoError::InvalidLength(aes::cipher::InvalidLength))
                 }
             }
-            Crypto::Sm4GCM { key } => {
+            Crypto::Sm4GcmSiv { key } => {
                 let cipher = sm4::new(&key);
                 let nonce = GenericArray::from_slice(nonce);
                 cipher
@@ -167,7 +167,7 @@ impl Crypto {
                     Err(CryptoError::InvalidLength(aes::cipher::InvalidLength))
                 }
             }
-            Self::Sm4GCM { key } => {
+            Self::Sm4GcmSiv { key } => {
                 let cipher = sm4::new(&key);
                 let nonce = GenericArray::from_slice(nonce);
                 cipher
@@ -430,7 +430,7 @@ mod tests {
 
     #[test]
     fn test_sm4_gcm_siv_crypto() {
-        let crypto = Crypto::Sm4GCM {
+        let crypto = Crypto::Sm4GcmSiv {
             key: hex!("11111111111111111111111111111111").to_vec(),
         };
 
