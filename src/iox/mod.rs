@@ -9,14 +9,14 @@ pub struct DataPack {
     pub data: bytes::Bytes,
 }
 
-fn merge_package(raed_buf: &mut bytes::BytesMut, data_buf: &mut bytes::BytesMut) {
-    let need_capacity = raed_buf.len() + data_buf.len();
+fn merge_package(read_buf: &mut bytes::BytesMut, data_buf: &mut bytes::BytesMut) {
+    let need_capacity = read_buf.len() + data_buf.len();
 
-    if raed_buf.capacity() < need_capacity {
-        raed_buf.reserve(need_capacity - raed_buf.capacity())
+    if read_buf.capacity() < need_capacity {
+        read_buf.reserve(need_capacity - read_buf.capacity())
     }
 
-    raed_buf.extend_from_slice(&data_buf);
+    read_buf.extend_from_slice(&data_buf);
     data_buf.clear();
 }
 

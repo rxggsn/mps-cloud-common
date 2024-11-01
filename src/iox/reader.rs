@@ -1,15 +1,18 @@
+use std::future::Future;
 use std::io;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use futures::{Stream, StreamExt};
-use tokio::io::{AsyncRead, ReadBuf};
+use futures::{Stream, StreamExt, TryFutureExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::tcp::OwnedReadHalf;
 
 use crate::iox;
 use crate::iox::DataPack;
+
+const TEMP_BUF_SIZE: usize = 1024;
 
 pub struct TimeoutStream<VAL, T> {
     reader: T,
@@ -97,25 +100,26 @@ impl Stream for TcpReader {
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.get_mut();
-        let ref mut buf = ReadBuf::new(&mut this.buf);
+        if this.buf.is_empty() {
+            let mut pinned = std::pin::pin!(this.reader.read_buf(&mut this.buf));
 
-        let mut pinned = std::pin::pin!(&mut this.reader);
-        match pinned.as_mut().poll_read(cx, buf) {
-            Poll::Ready(err) => {
-                if let Err(err) = err.map_err(|err| match err.kind() {
-                    io::ErrorKind::ConnectionAborted
-                    | io::ErrorKind::ConnectionReset
-                    | io::ErrorKind::NotConnected
-                    | io::ErrorKind::BrokenPipe
-                    | io::ErrorKind::UnexpectedEof => {
-                        io::Error::new(io::ErrorKind::UnexpectedEof, "EOF")
+            match pinned.as_mut().poll(cx) {
+                Poll::Ready(err) => {
+                    if let Err(err) = err.map_err(|err| match err.kind() {
+                        io::ErrorKind::ConnectionAborted
+                        | io::ErrorKind::ConnectionReset
+                        | io::ErrorKind::NotConnected
+                        | io::ErrorKind::BrokenPipe
+                        | io::ErrorKind::UnexpectedEof => {
+                            io::Error::new(io::ErrorKind::UnexpectedEof, "EOF")
+                        }
+                        _ => err,
+                    }) {
+                        return Poll::Ready(Some(Err(err)));
                     }
-                    _ => err,
-                }) {
-                    return Poll::Ready(Some(Err(err)));
                 }
+                Poll::Pending => return Poll::Pending,
             }
-            Poll::Pending => return Poll::Pending,
         }
 
         iox::merge_package(&mut this.read_buf, &mut this.buf);
@@ -130,4 +134,3 @@ impl Stream for TcpReader {
         Poll::Ready(Some(Ok(package)))
     }
 }
-
