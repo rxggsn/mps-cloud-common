@@ -55,6 +55,7 @@ rsa = { version = "0.9.6", optional = true, features = ["pem"] }
 sm2 = { version = "0.13.3", optional = true }
 sha2 = { version = "0.10", optional = true, features = ["oid"] }
 base64 = { version = "0.22.1", optional = true }
+tokio-stream = { version = "0.1.12", optional = true }
 
 [dependencies.uuid]
 version = "1.2.1"
@@ -105,13 +106,15 @@ full = [
     "crypto",
     "checksum",
     "concurrency",
-    "dbx"
+    "dbx",
+    "iox"
 ]
 default = ["futures"]
 crypto = ["aes", "ctr", "aes-gcm-siv", "sm4", "rsa", "sm2", "sha2", "base64"]
 checksum = ["crc"]
 concurrency = []
 dbx = []
+iox = ["tokio-stream", "futures"]
 rocksdb-enable = ["rocksdb"]
 sled-enable = ["sled"]
 
