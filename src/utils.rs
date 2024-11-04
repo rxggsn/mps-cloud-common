@@ -304,6 +304,9 @@ impl I64IdGenerator {
     }
 }
 
+pub fn num_cpus() -> usize{
+    num_cpus::get()
+}
 #[cfg(test)]
 mod tests {
     use std::{env, thread};
