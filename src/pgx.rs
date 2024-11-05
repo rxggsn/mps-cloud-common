@@ -7,7 +7,7 @@ use diesel::{Connection, ConnectionResult, PgConnection};
 use diesel::backend::Backend;
 use diesel::connection::{Instrumentation, LoadConnection, SimpleConnection, TransactionManager};
 use diesel::migration::{MigrationSource, MigrationVersion};
-use diesel::query_builder::{QueryFragment, QueryId};
+use diesel::query_builder::QueryFragment;
 use postgres_types::ToSql;
 use tokio::sync::RwLock;
 use tokio_postgres::{Config, NoTls, Row, Socket, tls::NoTlsStream};
@@ -23,7 +23,7 @@ pub struct Pool {
 
 impl Default for Pool {
     fn default() -> Self {
-        let datasource = env!("DATABASE_URL");
+        let datasource = option_env!("DATABASE_URL").expect("no DATABASE_URL env");
         let mut active_num = num_cpus();
         if active_num == 0 {
             active_num = 1;
@@ -34,7 +34,7 @@ impl Default for Pool {
 }
 
 macro_rules! pool_load_dsl {
-    ($name:ident,$ret_val:expr) => {
+    ($name:ident,$ret_val:ty) => {
         impl Pool {
             pub fn $name<'query, U, DSL: diesel::RunQueryDsl<PgConnection>>(
                 &self,
@@ -53,7 +53,7 @@ macro_rules! pool_load_dsl {
                     })
                     .unwrap_or(Err(diesel::result::Error::DatabaseError(
                         diesel::result::DatabaseErrorKind::UnableToSendCommand,
-                        Box::new("no active connection"),
+                        Box::new("no active connection".to_string()),
                     )))
             }
         }
@@ -63,7 +63,7 @@ macro_rules! pool_load_dsl {
 impl Pool {
     pub fn new(datasource: &str, active_num: usize) -> Self {
         let mut inner = BTreeMap::default();
-        let unlocked_con = SkipSet::from_iter(0i32..(active_num as i32));
+        let unlocked_con = SkipSet::from_iter(1i32..((active_num + 1) as i32));
         (0..active_num).for_each(|idx| {
             inner.insert(
                 (idx + 1) as i32,
@@ -77,13 +77,10 @@ impl Pool {
         }
     }
 
-    pub fn run_pending_migrations<S: MigrationSource<DB>, DB>(
+    pub fn run_pending_migrations(
         &self,
-        source: S,
-    ) -> diesel::migration::Result<Vec<MigrationVersion>>
-    where
-        DB: Backend,
-    {
+        source: diesel_migrations::EmbeddedMigrations,
+    ) -> diesel::migration::Result<Vec<String>> {
         use diesel_migrations::MigrationHarness;
         let (id, conn) = self.get_active_conn().expect("no active connection");
 
@@ -91,7 +88,33 @@ impl Pool {
         let result = conn.run_pending_migrations(source);
 
         self.put_back_conn(id);
-        result
+        result.map(|migrate_versions| {
+            migrate_versions
+                .iter()
+                .map(|version| version.to_string())
+                .collect()
+        })
+    }
+
+    pub fn execute<DSL: diesel::RunQueryDsl<PgConnection>>(
+        &self,
+        dsl: DSL,
+    ) -> diesel::QueryResult<usize>
+    where
+        DSL: diesel::query_dsl::methods::ExecuteDsl<PgConnection>,
+    {
+        self.get_active_conn()
+            .map(|(id, connection)| {
+                let conn = &mut *mutex(connection);
+                dsl.execute(conn).map(|r| {
+                    self.put_back_conn(id);
+                    r
+                })
+            })
+            .unwrap_or(Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UnableToSendCommand,
+                Box::new("no active connection".to_string()),
+            )))
     }
 }
 

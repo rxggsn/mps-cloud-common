@@ -14,11 +14,48 @@ use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::traits::PublicKeyParts;
 
 use crate::ALPHABET;
-use crate::crypto::block_mode::gcm;
+use crate::crypto::block_mode::{gcm, gcm_siv};
 use crate::utils::codec::hex_string_as_slice;
 
 pub mod block_mode {
     pub mod gcm {
+        use aes::cipher::{
+            BlockCipher, BlockEncrypt, generic_array::GenericArray, KeySizeUser, typenum::U16,
+        };
+        use aes::cipher::KeyInit;
+        use aes_gcm::aead::Aead;
+        use aes_gcm::aead::consts::U12;
+        use aes_gcm::AesGcm;
+
+        use crate::crypto::CryptoError;
+
+        macro_rules! gcm {
+            ($op:ident) => {
+                pub fn $op<T>(
+                    key: &[u8],
+                    nonce: &[u8],
+                    data: &[u8],
+                ) -> Result<bytes::Bytes, CryptoError>
+                where
+                    T: BlockCipher<BlockSize = U16> + BlockEncrypt + KeyInit + KeySizeUser,
+                {
+                    assert!(nonce.len() >= 12);
+                    let key = GenericArray::<u8, T::KeySize>::from_slice(key);
+                    let cipher = AesGcm::<T, U12>::new(key);
+                    let nonce = GenericArray::from_slice(&nonce[..12]);
+                    cipher
+                        .$op(nonce, data)
+                        .map(|v| bytes::Bytes::from(v))
+                        .map_err(|err| CryptoError::AEADCipherError(err))
+                }
+            };
+        }
+
+        gcm!(encrypt);
+        gcm!(decrypt);
+    }
+
+    pub mod gcm_siv {
         use aes::cipher::{
             BlockCipher, BlockEncrypt, generic_array::GenericArray, KeySizeUser, typenum::U16,
         };
@@ -101,6 +138,12 @@ pub enum Crypto {
         public_key: Vec<u8>,
         account_id: String,
     },
+    AesGcm {
+        key: Vec<u8>,
+    },
+    Sm4Gcm {
+        key: Vec<u8>,
+    },
 }
 
 impl Crypto {
@@ -122,6 +165,23 @@ impl Crypto {
             }
             Crypto::AesGcmSiv { key, .. } => {
                 if key.len() == 16 {
+                    gcm_siv::decrypt::<Aes128>(key, nonce, data)
+                } else if key.len() == 32 {
+                    gcm_siv::decrypt::<Aes256>(key, nonce, data)
+                } else {
+                    Err(CryptoError::InvalidLength(aes::cipher::InvalidLength))
+                }
+            }
+            Crypto::Sm4GcmSiv { key } => {
+                let cipher = sm4::new_gcm_siv(&key);
+                let nonce = GenericArray::from_slice(nonce);
+                cipher
+                    .decrypt(nonce, data)
+                    .map(|v| bytes::Bytes::from(v))
+                    .map_err(|err| CryptoError::AEADCipherError(err))
+            }
+            Crypto::AesGcm { key } => {
+                if key.len() == 16 {
                     gcm::decrypt::<Aes128>(key, nonce, data)
                 } else if key.len() == 32 {
                     gcm::decrypt::<Aes256>(key, nonce, data)
@@ -129,8 +189,8 @@ impl Crypto {
                     Err(CryptoError::InvalidLength(aes::cipher::InvalidLength))
                 }
             }
-            Crypto::Sm4GcmSiv { key } => {
-                let cipher = sm4::new(&key);
+            Crypto::Sm4Gcm { key } => {
+                let cipher = sm4::new_gcm(&key);
                 let nonce = GenericArray::from_slice(nonce);
                 cipher
                     .decrypt(nonce, data)
@@ -160,6 +220,23 @@ impl Crypto {
             }
             Self::AesGcmSiv { key, .. } => {
                 if key.len() == 16 {
+                    gcm_siv::encrypt::<Aes128>(key, nonce, data)
+                } else if key.len() == 32 {
+                    gcm_siv::encrypt::<Aes256>(key, nonce, data)
+                } else {
+                    Err(CryptoError::InvalidLength(aes::cipher::InvalidLength))
+                }
+            }
+            Self::Sm4GcmSiv { key } => {
+                let cipher = sm4::new_gcm_siv(&key);
+                let nonce = GenericArray::from_slice(nonce);
+                cipher
+                    .encrypt(nonce, data)
+                    .map(|v| bytes::Bytes::from(v))
+                    .map_err(|err| CryptoError::AEADCipherError(err))
+            }
+            Self::AesGcm { key } => {
+                if key.len() == 16 {
                     gcm::encrypt::<Aes128>(key, nonce, data)
                 } else if key.len() == 32 {
                     gcm::encrypt::<Aes256>(key, nonce, data)
@@ -167,8 +244,8 @@ impl Crypto {
                     Err(CryptoError::InvalidLength(aes::cipher::InvalidLength))
                 }
             }
-            Self::Sm4GcmSiv { key } => {
-                let cipher = sm4::new(&key);
+            Self::Sm4Gcm { key } => {
+                let cipher = sm4::new_gcm(&key);
                 let nonce = GenericArray::from_slice(nonce);
                 cipher
                     .encrypt(nonce, data)
@@ -266,12 +343,18 @@ impl Crypto {
 
 pub mod sm4 {
     use aes::cipher::Key;
+    use aes_gcm::aead::consts::U12;
+    use aes_gcm::AesGcm;
     use aes_gcm_siv::AesGcmSiv;
     use sm4::cipher::KeyInit;
     use sm4::Sm4;
 
-    pub fn new(key: &[u8]) -> AesGcmSiv<Sm4> {
+    pub fn new_gcm_siv(key: &[u8]) -> AesGcmSiv<Sm4> {
         AesGcmSiv::new(Key::<Sm4>::from_slice(key))
+    }
+
+    pub fn new_gcm(key: &[u8]) -> AesGcm<Sm4, U12> {
+        AesGcm::new(Key::<Sm4>::from_slice(key))
     }
 }
 
@@ -520,5 +603,120 @@ mod tests {
         // println!("data: {}", hex::encode(data));
         // println!("distid: {}", hex::encode(DIST_ID));
         assert!(crypto.check_sign(data, &actual_signature).expect(""));
+    }
+
+    #[test]
+    fn test_aes_gcm_crypto() {
+        let examples = include_str!("../examples/gcm/aes/test_examples.json");
+
+        let examples = serde_json::from_str::<Vec<TestExample>>(examples).expect("");
+
+        examples.into_iter().enumerate().for_each(|(idx, example)| {
+            println!("test example: {:?}", &example);
+            let crypto = Crypto::AesGcm {
+                key: hex::decode(&example.key).expect("").to_vec(),
+            };
+
+            let plain_text = hex::decode(&example.plain_text).expect("");
+            let mut crypto_state = CryptoStates::new(
+                hex::decode(&example.iv).expect("").to_vec(),
+                &crypto,
+                plain_text.as_slice(),
+            );
+
+            let r = crypto_state.encrypt();
+            assert!(r.is_ok());
+
+            let encrypt_data = r.expect("msg");
+            let mut encrypted_content = hex::encode(&encrypt_data);
+            let expected_cipher_text = example.cipher_text.clone();
+            encrypted_content
+                .replace_range(encrypted_content.len() - 32..encrypted_content.len(), "");
+            assert_eq!(encrypted_content, expected_cipher_text);
+
+            crypto_state.data = &encrypt_data;
+            let r = crypto_state.decrypt();
+            assert!(r.is_ok());
+            let decrypt_data = r.expect("msg");
+            assert_eq!(&decrypt_data, plain_text.as_slice());
+
+            let mut ciphertext = hex::decode(&example.cipher_text).expect("");
+            let mut tag = hex::decode(&example.tag).expect("");
+            ciphertext.append(&mut tag);
+            crypto_state.data = &ciphertext;
+            crypto_state.nonce = hex::decode(&example.iv).expect("");
+            let r = crypto_state.decrypt();
+            let decrypt_data = r
+                .map_err(|err| {
+                    println!("{}", err);
+                    err
+                })
+                .expect("msg");
+            assert_eq!(&decrypt_data, plain_text.as_slice());
+        });
+    }
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    struct TestExample {
+        #[serde(rename = "Key")]
+        pub key: String,
+        #[serde(rename = "Iv")]
+        pub iv: String,
+        #[serde(rename = "Plaintext")]
+        pub plain_text: String,
+        #[serde(rename = "Ciphertext")]
+        pub cipher_text: String,
+        #[serde(rename = "Tag")]
+        pub tag: String,
+    }
+
+    #[test]
+    fn test_sm4_gcm_crypto() {
+        let examples = include_str!("../examples/gcm/sm4/test_examples.json");
+
+        let examples = serde_json::from_str::<Vec<TestExample>>(examples).expect("");
+
+        examples.into_iter().for_each(|example| {
+            println!("test example: {:?}", &example);
+            let crypto = Crypto::Sm4Gcm {
+                key: hex::decode(&example.key).expect("").to_vec(),
+            };
+
+            let plain_text = hex::decode(&example.plain_text).expect("");
+            let mut crypto_state = CryptoStates::new(
+                hex::decode(&example.iv).expect("").to_vec(),
+                &crypto,
+                plain_text.as_slice(),
+            );
+
+            let r = crypto_state.encrypt();
+            assert!(r.is_ok());
+
+            let encrypt_data = r.expect("msg");
+            let mut encrypted_content = hex::encode(&encrypt_data);
+            let expected_cipher_text = example.cipher_text.clone();
+            encrypted_content
+                .replace_range(encrypted_content.len() - 32..encrypted_content.len(), "");
+            assert_eq!(encrypted_content, expected_cipher_text);
+
+            crypto_state.data = &encrypt_data;
+            let r = crypto_state.decrypt();
+            assert!(r.is_ok());
+            let decrypt_data = r.expect("msg");
+            assert_eq!(&decrypt_data, plain_text.as_slice());
+
+            let mut ciphertext = hex::decode(&example.cipher_text).expect("");
+            let mut tag = hex::decode(&example.tag).expect("");
+            ciphertext.append(&mut tag);
+            crypto_state.data = &ciphertext;
+            crypto_state.nonce = hex::decode(&example.iv).expect("");
+            let r = crypto_state.decrypt();
+            let decrypt_data = r
+                .map_err(|err| {
+                    println!("{}", err);
+                    err
+                })
+                .expect("msg");
+            assert_eq!(&decrypt_data, plain_text.as_slice());
+        });
     }
 }

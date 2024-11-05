@@ -59,6 +59,7 @@ tokio-stream = { version = "0.1.12", optional = true }
 diesel = { version = "2.2", features = ["postgres"], optional = true }
 diesel_migrations = { version = "2.2", optional = true }
 num_cpus = { version = "1.16.0" }
+aes-gcm = { version = "0.10", optional = true }
 
 [dependencies.uuid]
 version = "1.2.1"
@@ -113,7 +114,7 @@ full = [
     "iox"
 ]
 default = ["futures"]
-crypto = ["aes", "ctr", "aes-gcm-siv", "sm4", "rsa", "sm2", "sha2", "base64"]
+crypto = ["aes", "ctr", "aes-gcm-siv", "sm4", "rsa", "sm2", "sha2", "base64", "aes-gcm"]
 checksum = ["crc"]
 concurrency = []
 dbx = []
