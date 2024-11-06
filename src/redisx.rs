@@ -454,6 +454,7 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[cfg_attr(target_os = "macos")]
     async fn test_redis_stream_reconnect() {
         let (tx, rx) = mpsc::channel(10);
         let control = ControlPingPang { cmd: rx };
