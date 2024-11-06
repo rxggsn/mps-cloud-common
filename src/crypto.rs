@@ -373,6 +373,7 @@ pub enum CryptoError {
     LoadKeyError(String),
     LoadSignatureError(String),
     RsaError(rsa::Error),
+    NotAsymmetricAlgo,
 }
 
 impl Display for CryptoError {
@@ -391,6 +392,7 @@ impl Display for CryptoError {
             CryptoError::LoadKeyError(err) => f.write_str(&err),
             CryptoError::LoadSignatureError(err) => f.write_str(&err),
             CryptoError::RsaError(err) => f.write_fmt(format_args!("{}", err)),
+            CryptoError::NotAsymmetricAlgo => f.write_str("algorithm is not asymmetric"),
         }
     }
 }
@@ -418,25 +420,69 @@ pub fn base_64_decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
     BASE64_STANDARD.decode(data.as_bytes())
 }
 
-pub fn new_asymmetric_key_pair(bit_size: usize) -> Result<KeyPair, CryptoError> {
+pub fn new_rsa_key_pair(bit_size: usize) -> Result<KeyPair, CryptoError> {
     use rsa::pkcs8::{EncodePrivateKey, EncodePublicKey};
     let mut rng = rand::thread_rng();
     RsaPrivateKey::new(&mut rng, bit_size)
         .map_err(|err| CryptoError::RsaError(err))
         .and_then(|k| {
             let public_key = RsaPublicKey::from(&k);
-            k.to_pkcs8_pem(rsa::pkcs8::LineEnding::LF)
-                .map_err(|err| CryptoError::Pkcs8(err.to_string()))
-                .and_then(|private_key| {
-                    public_key
-                        .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
-                        .map(|public_key| KeyPair {
-                            private_key: private_key.to_string(),
-                            public_key,
-                        })
-                        .map_err(|err| CryptoError::Pkcs8(err.to_string()))
-                })
+            create_key_pair(k, public_key, pkcs8::LineEnding::LF)
         })
+}
+
+pub fn new_sm2_key_pair() -> Result<KeyPair, CryptoError> {
+    use sm2::{
+        pkcs8::{EncodePrivateKey, EncodePublicKey},
+        SecretKey,
+    };
+    let mut rng = rand::thread_rng();
+    let key = SecretKey::random(&mut rng);
+    let public_key = key.public_key();
+    create_key_pair(key, public_key, pkcs8::LineEnding::LF)
+}
+
+fn create_key_pair<PubKey, PrivateKey>(
+    private_key: PrivateKey,
+    pub_key: PubKey,
+    le: base64ct::LineEnding,
+) -> Result<KeyPair, CryptoError>
+where
+    PubKey: pkcs8::EncodePublicKey,
+    PrivateKey: pkcs8::EncodePrivateKey,
+{
+    private_key
+        .to_pkcs8_pem(pkcs8::LineEnding::LF)
+        .map_err(|err| CryptoError::Pkcs8(err.to_string()))
+        .and_then(|private_key| {
+            pub_key
+                .to_public_key_pem(le)
+                .map(|public_key| KeyPair {
+                    private_key: private_key.to_string(),
+                    public_key,
+                })
+                .map_err(|err| CryptoError::Pkcs8(err.to_string()))
+        })
+}
+
+pub fn parse_rsa_private_key(key: &str) -> Result<RsaPrivateKey, CryptoError> {
+    use rsa::pkcs8::DecodePrivateKey;
+    RsaPrivateKey::from_pkcs8_pem(key).map_err(|err| CryptoError::Pkcs8(err.to_string()))
+}
+
+pub fn parse_sm2_private_key(key: &str) -> Result<sm2::SecretKey, CryptoError> {
+    use sm2::pkcs8::DecodePrivateKey;
+    sm2::SecretKey::from_pkcs8_pem(key).map_err(|err| CryptoError::Pkcs8(err.to_string()))
+}
+
+pub fn parse_sm2_public_key(key: &str) -> Result<sm2::PublicKey, CryptoError> {
+    use sm2::pkcs8::DecodePublicKey;
+    sm2::PublicKey::from_public_key_pem(key).map_err(|err| CryptoError::Pkcs8(err.to_string()))
+}
+
+pub fn parse_rsa_public_key(key: &str) -> Result<RsaPublicKey, CryptoError> {
+    use rsa::pkcs8::DecodePublicKey;
+    RsaPublicKey::from_public_key_pem(key).map_err(|err| CryptoError::Pkcs8(err.to_string()))
 }
 
 pub fn new_key(bit_size: usize) -> Vec<u8> {

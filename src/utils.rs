@@ -226,7 +226,7 @@ pub mod codec {
     }
 
     pub fn hex_string_as_slice(text: &str) -> Vec<u8> {
-        hex::decode(text).expect("msg")
+        hex::decode(text).expect("invalid hex string")
     }
 
     pub fn u16_to_bcd(value: u16) -> [u8; 2] {
