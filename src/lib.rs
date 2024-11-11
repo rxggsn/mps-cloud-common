@@ -64,3 +64,5 @@ thread_local! {
     pub static LOCAL_IP_NUM: UnsafeCell<i32> = UnsafeCell::new(0);
     pub static LOCAL_IP: UnsafeCell<String> = UnsafeCell::new("".to_string());
 }
+
+pub const ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";

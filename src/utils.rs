@@ -208,13 +208,12 @@ pub mod codec {
 
         let mut r = vec![];
         (0..size).step_by(2).for_each(|idx| {
-            r.push(match u8::from_str_radix(&v[idx..idx + 2], 16) {
-                Ok(b) => b,
-                Err(err) => {
+            r.push(
+                u8::from_str_radix(&v[idx..idx + 2], 16).unwrap_or_else(|err| {
                     tracing::error!("parse hex to u8 failed: {}", err);
                     0
-                }
-            });
+                }),
+            );
         });
 
         let mut result = [0u8; 8];
@@ -227,16 +226,7 @@ pub mod codec {
     }
 
     pub fn hex_string_as_slice(text: &str) -> Vec<u8> {
-        (0..text.len())
-            .step_by(2)
-            .map(|idx| match u8::from_str_radix(&text[idx..idx + 2], 16) {
-                Ok(b) => b,
-                Err(err) => {
-                    tracing::error!("invalid parse hex string: {}", err);
-                    0
-                }
-            })
-            .collect()
+        hex::decode(text).expect("invalid hex string")
     }
 
     pub fn u16_to_bcd(value: u16) -> [u8; 2] {
@@ -249,29 +239,20 @@ pub mod codec {
         (0..4 - size).for_each(|_| v.insert(0, '0'));
 
         let mut result = [0u8; 2];
-        result[1] = match u8::from_str_radix(&v[2..4], 16) {
-            Ok(b) => b,
-            Err(err) => {
-                tracing::error!("parse byte failed: {}", err);
-                0
-            }
-        };
-        result[0] = match u8::from_str_radix(&v[0..2], 16) {
-            Ok(b) => b,
-            Err(err) => {
-                tracing::error!("parse byte failed: {}", err);
-                0
-            }
-        };
+        result[1] = u8::from_str_radix(&v[2..4], 16).unwrap_or_else(|err| {
+            tracing::error!("parse byte failed: {}", err);
+            0
+        });
+        result[0] = u8::from_str_radix(&v[0..2], 16).unwrap_or_else(|err| {
+            tracing::error!("parse byte failed: {}", err);
+            0
+        });
 
         result
     }
 
     pub fn buf_to_hex(buf: &[u8]) -> String {
-        buf.iter()
-            .map(|b| format!("{:02x}", b))
-            .collect::<Vec<String>>()
-            .join("")
+        hex::encode(buf)
     }
 }
 
@@ -309,7 +290,6 @@ pub fn exponential_backoff(times: u32) -> Duration {
 //     &nodes[0]
 // }
 
-
 pub struct I64IdGenerator(AtomicI64);
 
 impl Default for I64IdGenerator {
@@ -324,6 +304,9 @@ impl I64IdGenerator {
     }
 }
 
+pub fn num_cpus() -> usize{
+    num_cpus::get()
+}
 #[cfg(test)]
 mod tests {
     use std::{env, thread};

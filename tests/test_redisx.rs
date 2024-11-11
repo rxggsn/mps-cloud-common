@@ -13,28 +13,28 @@ async fn test_redisx_hash_ops() {
     let mut redis = conf.create().await;
 
     {
-        let r = redis.hset("key", 1, "val_1").await;
+        let r = redis.hset("test", 1, "val_1").await;
+        r.expect("hset failed");
+        let r = redis.hset("test", 2, "val_2").await;
         assert!(r.is_ok());
-        let r = redis.hset("key", 2, "val_2").await;
-        assert!(r.is_ok());
-        let r = redis.hset("key", 3, "val_3").await;
+        let r = redis.hset("test", 3, "val_3").await;
         assert!(r.is_ok());
     }
 
     {
-        let r = redis.hget::<&str, u64, String>("key", 1).await;
+        let r = redis.hget::<&str, u64, String>("test", 1).await;
         assert!(r.is_ok());
 
         let val = r.unwrap();
         assert_eq!(val, "val_1");
 
-        let r = redis.hget::<&str, u64, String>("key", 2).await;
+        let r = redis.hget::<&str, u64, String>("test", 2).await;
         assert!(r.is_ok());
 
         let val = r.unwrap();
         assert_eq!(val, "val_2");
 
-        let r = redis.hget::<&str, u64, String>("key", 3).await;
+        let r = redis.hget::<&str, u64, String>("test", 3).await;
         assert!(r.is_ok());
 
         let val = r.unwrap();
@@ -42,7 +42,7 @@ async fn test_redisx_hash_ops() {
     }
 
     {
-        let r = redis.hscan::<&str, u64, String>("key").await;
+        let r = redis.hscan::<&str, u64, String>("test").await;
         assert!(r.is_ok());
         let mut iter = r.unwrap();
         for x in 1..=3 {

@@ -1,8 +1,137 @@
 use std::{str::FromStr, sync::Arc, time::Duration};
+use std::collections::BTreeMap;
+use std::sync::Mutex;
 
+use crossbeam_skiplist::SkipSet;
+use diesel::{Connection, ConnectionResult, PgConnection};
+use diesel::backend::Backend;
+use diesel::connection::{Instrumentation, LoadConnection, SimpleConnection, TransactionManager};
+use diesel::migration::{MigrationSource, MigrationVersion};
+use diesel::query_builder::QueryFragment;
 use postgres_types::ToSql;
 use tokio::sync::RwLock;
-use tokio_postgres::{tls::NoTlsStream, Config, Connection, NoTls, Row, Socket};
+use tokio_postgres::{Config, NoTls, Row, Socket, tls::NoTlsStream};
+
+use crate::concurrency::mutex;
+use crate::utils::num_cpus;
+
+#[derive(Clone)]
+pub struct Pool {
+    inner: Arc<BTreeMap<i32, Mutex<PgConnection>>>,
+    unlocked_con: Arc<SkipSet<i32>>,
+}
+
+impl Default for Pool {
+    fn default() -> Self {
+        let datasource = option_env!("DATABASE_URL").expect("no DATABASE_URL env");
+        let mut active_num = num_cpus();
+        if active_num == 0 {
+            active_num = 1;
+        }
+
+        Self::new(datasource, active_num)
+    }
+}
+
+macro_rules! pool_load_dsl {
+    ($name:ident,$ret_val:ty) => {
+        impl Pool {
+            pub fn $name<'query, U, DSL: diesel::RunQueryDsl<PgConnection>>(
+                &self,
+                dsl: DSL,
+            ) -> diesel::QueryResult<$ret_val>
+            where
+                DSL: diesel::query_dsl::LoadQuery<'query, PgConnection, U>,
+            {
+                self.get_active_conn()
+                    .map(|(id, connection)| {
+                        let conn = &mut *mutex(connection);
+                        dsl.$name(conn).map(|r| {
+                            self.put_back_conn(id);
+                            r
+                        })
+                    })
+                    .unwrap_or(Err(diesel::result::Error::DatabaseError(
+                        diesel::result::DatabaseErrorKind::UnableToSendCommand,
+                        Box::new("no active connection".to_string()),
+                    )))
+            }
+        }
+    };
+}
+
+impl Pool {
+    pub fn new(datasource: &str, active_num: usize) -> Self {
+        let mut inner = BTreeMap::default();
+        let unlocked_con = SkipSet::from_iter(1i32..((active_num + 1) as i32));
+        (0..active_num).for_each(|idx| {
+            inner.insert(
+                (idx + 1) as i32,
+                Mutex::new(PgConnection::establish(datasource).expect("connect pg failed")),
+            );
+        });
+
+        Self {
+            inner: Arc::new(inner),
+            unlocked_con: Arc::new(unlocked_con),
+        }
+    }
+
+    pub fn run_pending_migrations(
+        &self,
+        source: diesel_migrations::EmbeddedMigrations,
+    ) -> diesel::migration::Result<Vec<String>> {
+        use diesel_migrations::MigrationHarness;
+        let (id, conn) = self.get_active_conn().expect("no active connection");
+
+        let conn = &mut *mutex(conn);
+        let result = conn.run_pending_migrations(source);
+
+        self.put_back_conn(id);
+        result.map(|migrate_versions| {
+            migrate_versions
+                .iter()
+                .map(|version| version.to_string())
+                .collect()
+        })
+    }
+
+    pub fn execute<DSL: diesel::RunQueryDsl<PgConnection>>(
+        &self,
+        dsl: DSL,
+    ) -> diesel::QueryResult<usize>
+    where
+        DSL: diesel::query_dsl::methods::ExecuteDsl<PgConnection>,
+    {
+        self.get_active_conn()
+            .map(|(id, connection)| {
+                let conn = &mut *mutex(connection);
+                dsl.execute(conn).map(|r| {
+                    self.put_back_conn(id);
+                    r
+                })
+            })
+            .unwrap_or(Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UnableToSendCommand,
+                Box::new("no active connection".to_string()),
+            )))
+    }
+}
+
+pool_load_dsl!(load, Vec<U>);
+pool_load_dsl!(get_result, U);
+
+impl Pool {
+    fn get_active_conn(&self) -> Option<(i32, &Mutex<PgConnection>)> {
+        self.unlocked_con
+            .pop_front()
+            .and_then(|idx| self.inner.get(idx.value()).map(|conn| (*idx.value(), conn)))
+    }
+
+    fn put_back_conn(&self, id: i32) {
+        self.unlocked_con.insert(id);
+    }
+}
 
 #[derive(Clone)]
 pub struct Postgres {
@@ -185,7 +314,7 @@ impl KeepAliveChecker {
     }
 }
 
-fn monitor_connection(conn: Connection<Socket, NoTlsStream>) {
+fn monitor_connection(conn: tokio_postgres::Connection<Socket, NoTlsStream>) {
     tokio::spawn(async move {
         if let Err(err) = conn.await {
             tracing::error!("pg reconnect error: {}", err);
