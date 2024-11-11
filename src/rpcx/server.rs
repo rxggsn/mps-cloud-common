@@ -80,7 +80,7 @@ where
 {
     let trace_id = retrive_trace_id(&request);
     let req = request.into_inner();
-    tracing::debug!("request - {}, method - {}", &req, path);
+    tracing::info!("request - {}, method - {}", &req, path);
     (trace_id, req)
 }
 
