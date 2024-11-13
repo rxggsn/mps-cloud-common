@@ -89,7 +89,7 @@ prost-build = "0.12"
 
 
 [features]
-pgx = ["tokio-postgres", "postgres-types", "diesel", "diesel_migrations"]
+pgx = ["tokio-postgres", "postgres-types"]
 kafkax = ["rdkafka", "futures"]
 redisx = ["redis"]
 elasticx = ["elasticsearch"]
@@ -135,6 +135,7 @@ dbx = []
 iox = ["tokio-stream", "futures"]
 rocksdb-enable = ["rocksdb"]
 sled-enable = ["sled"]
+diesel-enable= ["diesel", "diesel_migrations"]
 
 [dev-dependencies]
 tokio-stream = { version = "0.1.12" }

@@ -3,10 +3,15 @@ use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use crossbeam_skiplist::SkipSet;
+#[cfg(feature = "diesel-enable")]
 use diesel::{Connection, ConnectionResult, PgConnection};
+#[cfg(feature = "diesel-enable")]
 use diesel::backend::Backend;
+#[cfg(feature = "diesel-enable")]
 use diesel::connection::{Instrumentation, LoadConnection, SimpleConnection, TransactionManager};
+#[cfg(feature = "diesel-enable")]
 use diesel::migration::{MigrationSource, MigrationVersion};
+#[cfg(feature = "diesel-enable")]
 use diesel::query_builder::QueryFragment;
 use postgres_types::ToSql;
 use tokio::sync::RwLock;
@@ -15,12 +20,15 @@ use tokio_postgres::{Config, NoTls, Row, Socket, tls::NoTlsStream};
 use crate::concurrency::mutex;
 use crate::utils::num_cpus;
 
+#[cfg(feature = "diesel-enable")]
 #[derive(Clone)]
 pub struct Pool {
     inner: Arc<BTreeMap<i32, Mutex<PgConnection>>>,
     unlocked_con: Arc<SkipSet<i32>>,
+    max_num: usize,
 }
 
+#[cfg(feature = "diesel-enable")]
 impl Default for Pool {
     fn default() -> Self {
         let datasource = option_env!("DATABASE_URL").expect("no DATABASE_URL env");
@@ -29,12 +37,13 @@ impl Default for Pool {
             active_num = 1;
         }
 
-        Self::new(datasource, active_num)
+        Self::new(datasource, active_num, active_num * 2)
     }
 }
 
-macro_rules! pool_load_dsl {
+macro_rules! pool_query_dsl {
     ($name:ident,$ret_val:ty) => {
+        #[cfg(feature = "diesel-enable")]
         impl Pool {
             pub fn $name<'query, U, DSL: diesel::RunQueryDsl<PgConnection>>(
                 &self,
@@ -60,8 +69,9 @@ macro_rules! pool_load_dsl {
     };
 }
 
+#[cfg(feature = "diesel-enable")]
 impl Pool {
-    pub fn new(datasource: &str, active_num: usize) -> Self {
+    pub fn new(datasource: &str, active_num: usize, max_num: usize) -> Self {
         let mut inner = BTreeMap::default();
         let unlocked_con = SkipSet::from_iter(1i32..((active_num + 1) as i32));
         (0..active_num).for_each(|idx| {
@@ -74,6 +84,7 @@ impl Pool {
         Self {
             inner: Arc::new(inner),
             unlocked_con: Arc::new(unlocked_con),
+            max_num,
         }
     }
 
@@ -118,9 +129,10 @@ impl Pool {
     }
 }
 
-pool_load_dsl!(load, Vec<U>);
-pool_load_dsl!(get_result, U);
+pool_query_dsl!(load, Vec<U>);
+pool_query_dsl!(get_result, U);
 
+#[cfg(feature = "diesel-enable")]
 impl Pool {
     fn get_active_conn(&self) -> Option<(i32, &Mutex<PgConnection>)> {
         self.unlocked_con
