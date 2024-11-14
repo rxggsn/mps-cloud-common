@@ -87,12 +87,17 @@ mod tests {
 
         let ts = now_timestamp();
         writer.write_all(b"hello").await.unwrap();
-        writer.write_all(b"world").await.unwrap();
-
         let elapsed = now_timestamp() - ts;
+        assert!(elapsed >= 100);
+
+        tokio::time::sleep(Duration::from_millis(130)).await;
+        let ts = now_timestamp();
+        writer.write_all(b"world").await.unwrap();
+        let elapsed = now_timestamp() - ts;
+
+        assert!(elapsed < 100);
 
         let buf = writer.writer.into_inner();
         assert_eq!(buf, b"helloworld");
-        assert!(elapsed >= 200);
     }
 }
