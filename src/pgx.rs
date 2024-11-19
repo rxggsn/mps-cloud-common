@@ -10,7 +10,11 @@ use diesel::backend::Backend;
 #[cfg(feature = "diesel-enable")]
 use diesel::connection::{Instrumentation, LoadConnection, SimpleConnection, TransactionManager};
 #[cfg(feature = "diesel-enable")]
+use diesel::debug_query;
+#[cfg(feature = "diesel-enable")]
 use diesel::migration::{MigrationSource, MigrationVersion};
+#[cfg(feature = "diesel-enable")]
+use diesel::pg::Pg;
 #[cfg(feature = "diesel-enable")]
 use diesel::query_builder::QueryFragment;
 use postgres_types::ToSql;
@@ -45,18 +49,22 @@ macro_rules! pool_query_dsl {
     ($name:ident,$ret_val:ty) => {
         #[cfg(feature = "diesel-enable")]
         impl Pool {
-            pub fn $name<'query, U, DSL: diesel::RunQueryDsl<PgConnection>>(
+            pub fn $name<'query, U, DSL>(
                 &self,
                 dsl: DSL,
             ) -> diesel::QueryResult<$ret_val>
             where
-                DSL: diesel::query_dsl::LoadQuery<'query, PgConnection, U>,
+                DSL: diesel::query_dsl::LoadQuery<'query, PgConnection, U>
+            + diesel::RunQueryDsl<PgConnection>
+            + QueryFragment<Pg>,
             {
                 self.get_active_conn()
                     .map(|(id, connection)| {
                         let conn = &mut *mutex(connection);
+                        tracing::info!("{}", debug_query(&dsl).to_string());
                         dsl.$name(conn).map(|r| {
                             self.put_back_conn(id);
+                            drop(conn);
                             r
                         })
                     })
@@ -107,16 +115,16 @@ impl Pool {
         })
     }
 
-    pub fn execute<DSL: diesel::RunQueryDsl<PgConnection>>(
-        &self,
-        dsl: DSL,
-    ) -> diesel::QueryResult<usize>
+    pub fn execute<DSL>(&self, dsl: DSL) -> diesel::QueryResult<usize>
     where
-        DSL: diesel::query_dsl::methods::ExecuteDsl<PgConnection>,
+        DSL: diesel::query_dsl::methods::ExecuteDsl<PgConnection>
+            + diesel::RunQueryDsl<PgConnection>
+            + QueryFragment<Pg>,
     {
         self.get_active_conn()
             .map(|(id, connection)| {
                 let conn = &mut *mutex(connection);
+                tracing::info!("{}", debug_query::<diesel::pg::Pg, _>(&dsl).to_string());
                 dsl.execute(conn).map(|r| {
                     self.put_back_conn(id);
                     r

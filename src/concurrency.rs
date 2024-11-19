@@ -126,6 +126,7 @@ mod tests {
         sync::{Arc, RwLock},
         thread,
     };
+    use std::sync::Mutex;
 
     #[test]
     fn test_read() {
@@ -178,6 +179,32 @@ mod tests {
             let val = super::read(&rwlock);
             assert_eq!(*val, 3);
             assert_eq!(rwlock.is_poisoned(), false);
+        }
+    }
+
+    #[test]
+    fn test_mutex() {
+        let lock = Arc::new(Mutex::new(1));
+        let c_lock = Arc::clone(&lock);
+
+        {
+            let val = super::mutex(&lock);
+            assert_eq!(*val, 1);
+        }
+
+        {
+            thread::spawn(move || {
+                let mut val = super::mutex(&c_lock);
+                *val = 2;
+                panic!("");
+            })
+            .join()
+            .unwrap_err();
+        }
+
+        {
+            let val = super::mutex(&lock);
+            assert_eq!(*val, 2);
         }
     }
 }
