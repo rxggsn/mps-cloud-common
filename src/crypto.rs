@@ -476,8 +476,9 @@ pub fn parse_sm2_private_key(key: &str) -> Result<sm2::SecretKey, CryptoError> {
 }
 
 pub fn parse_sm2_public_key(key: &str) -> Result<sm2::PublicKey, CryptoError> {
+    let key = key.replace("\\n", "\n").replace("\\\n", "\n");
     use sm2::pkcs8::DecodePublicKey;
-    sm2::PublicKey::from_public_key_pem(key).map_err(|err| CryptoError::Pkcs8(err.to_string()))
+    sm2::PublicKey::from_public_key_pem(&key).map_err(|err| CryptoError::Pkcs8(err.to_string()))
 }
 
 pub fn parse_rsa_public_key(key: &str) -> Result<RsaPublicKey, CryptoError> {
