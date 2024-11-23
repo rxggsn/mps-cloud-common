@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use crossbeam_skiplist::SkipSet;
 use derive_new::new;
-use diesel::{Connection, ConnectionResult, PgConnection};
+use diesel::{Connection, ConnectionResult, PgConnection, RunQueryDsl};
 use diesel::backend::Backend;
 use diesel::connection::{Instrumentation, LoadConnection, SimpleConnection, TransactionManager};
 use diesel::connection::InstrumentationEvent;
@@ -114,6 +114,22 @@ impl Pool {
             .map(|(id, connection)| {
                 let conn = &mut *mutex(connection);
                 dsl.execute(conn).map(|r| {
+                    self.put_back_conn(id);
+                    r
+                })
+            })
+            .unwrap_or(Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UnableToSendCommand,
+                Box::new("no active connection".to_string()),
+            )))
+    }
+
+    pub fn sql_query<U>(&self, sql: &str) -> diesel::QueryResult<Vec<U>> {
+        use diesel::sql_query;
+        self.get_active_conn()
+            .map(|(id, connection)| {
+                let conn = &mut *mutex(connection);
+                sql_query(sql).load::<U>(conn).map(|r| {
                     self.put_back_conn(id);
                     r
                 })
