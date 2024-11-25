@@ -8,7 +8,6 @@ use tokio::sync::RwLock;
 use tokio_postgres::{Config, NoTls, Row, Socket};
 use tokio_postgres::tls::NoTlsStream;
 
-
 #[derive(Clone)]
 pub struct Postgres {
     cli: Arc<RwLock<tokio_postgres::Client>>,
@@ -150,6 +149,10 @@ pub fn prepare_insert_stmt<T: Table>() -> String {
             .collect::<Vec<String>>()
             .join(",")
     )
+}
+
+pub fn parse_db_name(datasource: &str) -> Result<Option<&str>, tokio_postgres::Error> {
+    Config::from_str(datasource).map(|config| config.get_dbname())
 }
 
 pub trait Table {

@@ -4,19 +4,21 @@ use std::sync::Mutex;
 
 use crossbeam_skiplist::SkipSet;
 use derive_new::new;
-use diesel::{Connection, ConnectionResult, PgConnection, RunQueryDsl};
+use diesel::{Connection, ConnectionResult, PgConnection, QueryResult, RunQueryDsl, sql_query};
 use diesel::backend::Backend;
 use diesel::connection::{Instrumentation, LoadConnection, SimpleConnection, TransactionManager};
 use diesel::connection::InstrumentationEvent;
 use diesel::debug_query;
 use diesel::migration::{MigrationSource, MigrationVersion};
 use diesel::pg::Pg;
-use diesel::query_builder::QueryFragment;
+use diesel::query_builder::{QueryFragment, SqlQuery};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::Receiver;
 
 use crate::concurrency::mutex;
 use crate::utils::num_cpus;
+
+const DEFAULT_QUERY_PROC: fn(SqlQuery) -> SqlQuery = |query| query;
 
 #[derive(Clone)]
 pub struct Pool {
@@ -105,7 +107,7 @@ impl Pool {
         })
     }
 
-    pub fn execute<DSL>(&self, dsl: DSL) -> diesel::QueryResult<usize>
+    pub fn execute<DSL>(&self, dsl: DSL) -> QueryResult<usize>
     where
         DSL: diesel::query_dsl::methods::ExecuteDsl<PgConnection>
             + diesel::RunQueryDsl<PgConnection>,
@@ -114,22 +116,6 @@ impl Pool {
             .map(|(id, connection)| {
                 let conn = &mut *mutex(connection);
                 dsl.execute(conn).map(|r| {
-                    self.put_back_conn(id);
-                    r
-                })
-            })
-            .unwrap_or(Err(diesel::result::Error::DatabaseError(
-                diesel::result::DatabaseErrorKind::UnableToSendCommand,
-                Box::new("no active connection".to_string()),
-            )))
-    }
-
-    pub fn sql_query<U>(&self, sql: &str) -> diesel::QueryResult<Vec<U>> {
-        use diesel::sql_query;
-        self.get_active_conn()
-            .map(|(id, connection)| {
-                let conn = &mut *mutex(connection);
-                sql_query(sql).load::<U>(conn).map(|r| {
                     self.put_back_conn(id);
                     r
                 })
@@ -180,14 +166,14 @@ fn handle_instrumentation_event(event: InstrumentationEvent<'_>) {
             });
         }
         InstrumentationEvent::StartQuery { query, .. } => {
-            tracing::debug!("sql query: {}", query);
+            tracing::debug!("execution_plan query: {}", query);
         }
         InstrumentationEvent::CacheQuery { sql, .. } => {
-            tracing::debug!("cached sql query: {}", sql);
+            tracing::debug!("cached execution_plan query: {}", sql);
         }
         InstrumentationEvent::FinishQuery { error, .. } => {
             error.iter().for_each(|e| {
-                tracing::error!("finish sql query failed: {}", e);
+                tracing::error!("finish execution_plan query failed: {}", e);
             });
         }
         InstrumentationEvent::BeginTransaction { .. } => {}
