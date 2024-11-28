@@ -479,12 +479,19 @@ pub struct Options {
     pub cache_size: CacheSize,
     #[cfg(feature = "rocksdb-enable")]
     pub prefix: Option<usize>,
+    #[cfg(feature = "rocksdb-enable")]
+    pub bloom_locality: u32,
 }
 
 impl Options {
     #[cfg(feature = "rocksdb-enable")]
     pub fn fixed_prefix_length(&mut self, prefix: usize) {
         self.prefix = Some(prefix);
+    }
+
+    #[cfg(feature = "rocksdb-enable")]
+    pub fn set_bloom_locality(&mut self, locality: u32) {
+        self.bloom_locality = locality
     }
 }
 
@@ -506,6 +513,7 @@ impl DBWithInnerKvStore<RocksKv> {
     pub fn open<P: AsRef<Path>>(options: &Options, path: P) -> Result<Self, DBError> {
         let mut opts = rocksdb::Options::default();
         opts.create_if_missing(true);
+        opts.set_bloom_locality(options.bloom_locality);
         if let Some(prefix_length) = options.prefix {
             opts.set_prefix_extractor(rocksdb::SliceTransform::create_fixed_prefix(prefix_length));
         }

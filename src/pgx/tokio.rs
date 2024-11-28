@@ -151,8 +151,8 @@ pub fn prepare_insert_stmt<T: Table>() -> String {
     )
 }
 
-pub fn parse_db_name(datasource: &str) -> Result<Option<&str>, tokio_postgres::Error> {
-    Config::from_str(datasource).map(|config| config.get_dbname())
+pub fn parse_config(datasource: &str) -> Result<Config, tokio_postgres::Error> {
+    Config::from_str(datasource)
 }
 
 pub trait Table {
