@@ -1,24 +1,15 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{sync::Arc, time::Duration};
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
 use crossbeam_skiplist::SkipSet;
 use derive_new::new;
-use diesel::{Connection, ConnectionResult, PgConnection, QueryResult, RunQueryDsl, sql_query};
-use diesel::backend::Backend;
-use diesel::connection::{Instrumentation, LoadConnection, SimpleConnection, TransactionManager};
+use diesel::{Connection, PgConnection, QueryResult};
 use diesel::connection::InstrumentationEvent;
-use diesel::debug_query;
-use diesel::migration::{MigrationSource, MigrationVersion};
-use diesel::pg::Pg;
-use diesel::query_builder::{QueryFragment, SqlQuery};
 use tokio::sync::oneshot;
-use tokio::sync::oneshot::Receiver;
 
 use crate::concurrency::mutex;
 use crate::utils::num_cpus;
-
-const DEFAULT_QUERY_PROC: fn(SqlQuery) -> SqlQuery = |query| query;
 
 #[derive(Clone)]
 pub struct Pool {
@@ -46,15 +37,13 @@ macro_rules! pool_query_dsl {
         impl Pool {
             pub fn $name<'query, U, DSL>(&self, dsl: DSL) -> diesel::QueryResult<$ret_val>
             where
-                DSL: diesel::query_dsl::LoadQuery<'query, PgConnection, U>
-                    + diesel::RunQueryDsl<PgConnection>,
+                DSL: diesel::query_dsl::LoadQuery<'query, PgConnection, U>,
             {
                 self.get_active_conn()
                     .map(|(id, connection)| {
                         let conn = &mut *mutex(connection);
                         dsl.$name(conn).map(|r| {
                             self.put_back_conn(id);
-                            drop(conn);
                             r
                         })
                     })
@@ -149,7 +138,7 @@ impl Pool {
     fn keep_alive(
         connections: Arc<BTreeMap<i32, Mutex<PgConnection>>>,
         datasource: &str,
-        rx: Receiver<()>,
+        rx: oneshot::Receiver<()>,
     ) {
         tokio::spawn(DieselKeepAliveHelper::new(connections, datasource.to_string()).start(rx));
     }
@@ -190,7 +179,7 @@ struct DieselKeepAliveHelper {
 }
 
 impl DieselKeepAliveHelper {
-    async fn start(mut self, mut rx: Receiver<()>) {
+    async fn start(self, mut rx: oneshot::Receiver<()>) {
         use diesel::RunQueryDsl;
         use std::ops::ControlFlow;
         let mut interval = tokio::time::interval(Duration::from_secs(120));

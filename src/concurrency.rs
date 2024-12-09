@@ -1,6 +1,7 @@
+use std::pin::Pin;
 use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use futures::{Future, FutureExt};
+use futures::{Future, FutureExt, Stream};
 use tokio::sync::watch::{Receiver, Ref};
 use tonic::async_trait;
 
@@ -119,9 +120,15 @@ pub fn mutex<T>(mutex: &Mutex<T>) -> MutexGuard<T> {
     })
 }
 
+pub fn iter_stream<V, I: IntoIterator<Item = V>>(i: I) -> Pin<Box<dyn Stream<Item = V>>>
+where
+    <I as IntoIterator>::IntoIter: 'static,
+{
+    Box::pin(tokio_stream::iter(i))
+}
+
 #[cfg(test)]
 mod tests {
-
     use std::{
         sync::{Arc, RwLock},
         thread,

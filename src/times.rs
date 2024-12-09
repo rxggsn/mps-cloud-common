@@ -13,7 +13,7 @@ pub fn today_start_timestamp_secs() -> i64 {
     let now = chrono::Local::now();
     now.date_naive()
         .and_hms_milli_opt(0, 0, 0, 0)
-        .map(|datetime| datetime.timestamp())
+        .map(|datetime| datetime.and_utc().timestamp())
         .unwrap_or_default()
 }
 
@@ -21,7 +21,7 @@ pub fn today_end_timestamp_secs() -> i64 {
     let now = chrono::Local::now();
     now.date_naive()
         .and_hms_milli_opt(23, 59, 59, 999)
-        .map(|datetime| datetime.timestamp())
+        .map(|datetime| datetime.and_utc().timestamp())
         .unwrap_or_default()
 }
 
