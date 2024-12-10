@@ -113,6 +113,14 @@ impl_sql_type!(Json, 114);
 impl_sql_type!(Jsonb, 3802);
 impl_sql_type!(Uuid, 2950);
 
+impl FromSql for String {
+    fn from_sql(value: &[u8]) -> Result<Self> {
+        String::from_utf8_lossy(value)
+            .parse()
+            .map_err(|e| Box::new(e) as Box<_>)
+    }
+}
+
 impl<'a> SqlType for &'a str {
     fn ty_oid() -> u32 {
         1043
@@ -161,7 +169,7 @@ pub mod primitive {
 
     impl FromSql for u32 {
         fn from_sql(value: &[u8]) -> Result<Self> {
-            let mut bytes = value.clone();
+            let mut bytes = value;
             bytes.read_u32::<NetworkEndian>().map_err(Into::into)
         }
     }
@@ -329,6 +337,12 @@ pub mod complex {
     use bytes::Bytes;
 
     use super::*;
+
+    impl FromSql for Vec<u8> {
+        fn from_sql(value: &[u8]) -> Result<Self> {
+            Ok(value.to_vec())
+        }
+    }
 
     impl<V> FromSql for Vec<V>
     where
