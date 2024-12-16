@@ -1,3 +1,4 @@
+#![allow(unused_imports,unused_variables)]
 extern crate core;
 
 use std::cell::UnsafeCell;

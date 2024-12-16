@@ -1,6 +1,6 @@
 use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-use futures::{Future, FutureExt, Stream};
+use futures::{Future, FutureExt, Stream as _};
 use tokio::sync::watch::{Receiver, Ref};
 use tokio_stream::Iter;
 use tonic::async_trait;

@@ -1,7 +1,8 @@
 use std::{fmt, result};
 use std::error::Error;
 
-use bytes::BytesMut;
+use byteorder::{NetworkEndian, ReadBytesExt};
+use bytes::{BufMut, BytesMut};
 use serde::de::StdError;
 
 pub type Result<T> = result::Result<T, Box<dyn Error + Send + Sync>>;
@@ -10,8 +11,9 @@ pub type Result<T> = result::Result<T, Box<dyn Error + Send + Sync>>;
 pub struct UnexpectedNullError;
 
 pub struct Json(serde_json::Value);
-pub struct Jsonb(serde_json::Value);
+pub struct Jsonb(Vec<u8>);
 pub struct Uuid(uuid::Uuid);
+pub struct Name(String);
 
 impl fmt::Display for UnexpectedNullError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -45,6 +47,49 @@ pub trait ToSql {
 
 pub trait SqlType {
     fn ty_oid() -> u32;
+
+    fn len() -> Option<usize> {
+        None
+    }
+}
+
+impl<'a, T> SqlType for &'a T
+where
+    T: SqlType,
+{
+    fn ty_oid() -> u32 {
+        T::ty_oid()
+    }
+
+    fn len() -> Option<usize> {
+        T::len()
+    }
+}
+
+impl<T> SqlType for Box<T>
+where
+    T: SqlType,
+{
+    fn ty_oid() -> u32 {
+        T::ty_oid()
+    }
+
+    fn len() -> Option<usize> {
+        T::len()
+    }
+}
+
+impl<T> SqlType for Option<T>
+where
+    T: SqlType,
+{
+    fn ty_oid() -> u32 {
+        T::ty_oid()
+    }
+
+    fn len() -> Option<usize> {
+        T::len()
+    }
 }
 
 impl<'a, T> ToSql for &'a T
@@ -99,45 +144,93 @@ where
 }
 
 macro_rules! impl_sql_type {
-    ($ty:ty,$oid:expr) => {
+    ($ty:ty,$oid:expr,$len:expr) => {
         impl SqlType for $ty {
             fn ty_oid() -> u32 {
                 $oid
+            }
+            fn len() -> Option<usize> {
+                $len
             }
         }
     };
 }
 
-impl_sql_type!(String, 1043);
-impl_sql_type!(Json, 114);
-impl_sql_type!(Jsonb, 3802);
-impl_sql_type!(Uuid, 2950);
+pub mod utf8 {
+    use super::*;
 
-impl FromSql for String {
-    fn from_sql(value: &[u8]) -> Result<Self> {
-        String::from_utf8_lossy(value)
-            .parse()
-            .map_err(|e| Box::new(e) as Box<_>)
+    impl_sql_type!(String, 1043, None);
+    impl_sql_type!(Json, 114, None);
+    impl_sql_type!(Jsonb, 3802, None);
+    impl_sql_type!(Uuid, 2950, Some(16));
+    impl_sql_type!(Name, 19, Some(64));
+
+    impl FromSql for String {
+        fn from_sql(value: &[u8]) -> Result<Self> {
+            String::from_utf8_lossy(value)
+                .parse()
+                .map_err(|e| Box::new(e) as Box<_>)
+        }
     }
-}
 
-impl<'a> SqlType for &'a str {
-    fn ty_oid() -> u32 {
-        1043
+    impl<'a> SqlType for &'a str {
+        fn ty_oid() -> u32 {
+            1043
+        }
+    }
+
+    impl<'a> ToSql for &'a str {
+        fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
+            buf.put_slice(self.as_bytes());
+            Ok(())
+        }
+    }
+
+    impl ToSql for String {
+        fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
+            buf.put_slice(self.as_bytes());
+            Ok(())
+        }
     }
 }
 
 pub mod primitive {
     use byteorder::{NetworkEndian, ReadBytesExt};
+    use bytes::BufMut;
 
     use super::*;
 
-    impl_sql_type!(bool, 16);
-    impl_sql_type!(i64, 21);
-    impl_sql_type!(i16, 21);
-    impl_sql_type!(i32, 23);
-    impl_sql_type!(f32, 700);
-    impl_sql_type!(f64, 701);
+    macro_rules! impl_to_sql {
+        ($ty:ty,$tyname:ident) => {
+            impl ToSql for $ty {
+                fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
+                    buf.$tyname(*self);
+                    Ok(())
+                }
+            }
+        };
+    }
+
+    impl_sql_type!(bool, 16, Some(1));
+    impl_sql_type!(i64, 21, Some(8));
+    impl_sql_type!(i16, 21, Some(2));
+    impl_sql_type!(i32, 23, Some(4));
+    impl_sql_type!(f32, 700, Some(4));
+    impl_sql_type!(f64, 701, Some(8));
+    impl_sql_type!(u32, 26, Some(4));
+
+    impl ToSql for bool {
+        fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
+            buf.put_u8(*self as u8);
+            Ok(())
+        }
+    }
+
+    impl_to_sql!(i16, put_i16);
+    impl_to_sql!(i32, put_i32);
+    impl_to_sql!(i64, put_i64);
+    impl_to_sql!(f64, put_f64);
+    impl_to_sql!(f32, put_f32);
 
     impl FromSql for bool {
         fn from_sql(value: &[u8]) -> Result<Self> {
@@ -270,9 +363,9 @@ pub mod datetime {
 
     use super::*;
 
-    impl_sql_type!(NaiveTime, 1083);
-    impl_sql_type!(NaiveDate, 1082);
-    impl_sql_type!(NaiveDateTime, 1114);
+    impl_sql_type!(NaiveTime, 1083, Some(8));
+    impl_sql_type!(NaiveDate, 1082, Some(4));
+    impl_sql_type!(NaiveDateTime, 1114, Some(8));
 
     // Postgres timestamps start from January 1st 2000.
     fn pg_epoch() -> NaiveDateTime {
@@ -332,8 +425,47 @@ pub mod datetime {
     }
 }
 
-pub mod complex {
-    use byteorder::{NetworkEndian, ReadBytesExt};
+impl<V> FromSql for Vec<V>
+where
+    V: FromSql,
+{
+    fn from_sql(value: &[u8]) -> Result<Self> {
+        let mut bytes = value;
+        let num_dimensions = bytes.read_i32::<NetworkEndian>()?;
+        let has_null = bytes.read_i32::<NetworkEndian>()? != 0;
+        let _oid = bytes.read_i32::<NetworkEndian>()?;
+
+        if num_dimensions == 0 {
+            return Ok(Vec::new());
+        }
+
+        let num_elements = bytes.read_i32::<NetworkEndian>()?;
+        let _lower_bound = bytes.read_i32::<NetworkEndian>()?;
+
+        if num_dimensions != 1 {
+            return Err("multi-dimensional arrays are not supported".into());
+        }
+
+        (0..num_elements)
+            .map(|_| {
+                let elem_size = bytes.read_i32::<NetworkEndian>()?;
+                if has_null && elem_size == -1 {
+                    V::from_nullable_sql(None)
+                } else {
+                    let (elem_bytes, new_bytes) = bytes.split_at(elem_size.try_into()?);
+                    bytes = new_bytes;
+                    V::from_sql(elem_bytes)
+                }
+            })
+            .collect()
+    }
+}
+
+impl_sql_type!(Vec<i16>, 22, None);
+impl_sql_type!(Vec<String>, 1015, None);
+impl_sql_type!(Vec<i64>, 1016, None);
+
+pub mod binary {
     use bytes::Bytes;
 
     use super::*;
@@ -344,50 +476,41 @@ pub mod complex {
         }
     }
 
-    impl<V> FromSql for Vec<V>
-    where
-        V: FromSql,
-    {
-        fn from_sql(value: &[u8]) -> Result<Self> {
-            let mut bytes = value;
-            let num_dimensions = bytes.read_i32::<NetworkEndian>()?;
-            let has_null = bytes.read_i32::<NetworkEndian>()? != 0;
-            let _oid = bytes.read_i32::<NetworkEndian>()?;
-
-            if num_dimensions == 0 {
-                return Ok(Vec::new());
-            }
-
-            let num_elements = bytes.read_i32::<NetworkEndian>()?;
-            let _lower_bound = bytes.read_i32::<NetworkEndian>()?;
-
-            if num_dimensions != 1 {
-                return Err("multi-dimensional arrays are not supported".into());
-            }
-
-            (0..num_elements)
-                .map(|_| {
-                    let elem_size = bytes.read_i32::<NetworkEndian>()?;
-                    if has_null && elem_size == -1 {
-                        V::from_nullable_sql(None)
-                    } else {
-                        let (elem_bytes, new_bytes) = bytes.split_at(elem_size.try_into()?);
-                        bytes = new_bytes;
-                        V::from_sql(elem_bytes)
-                    }
-                })
-                .collect()
-        }
-    }
-
     impl<'a> SqlType for &'a [u8] {
         fn ty_oid() -> u32 {
             17
         }
     }
 
-    impl_sql_type!(Vec<i16>, 22);
-    impl_sql_type!(Vec<u8>, 17);
-    impl_sql_type!(BytesMut, 17);
-    impl_sql_type!(Bytes, 17);
+    impl<'a> ToSql for &'a [u8] {
+        fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
+            buf.put_slice(self);
+            Ok(())
+        }
+    }
+
+    impl ToSql for Vec<u8> {
+        fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
+            buf.put_slice(&self);
+            Ok(())
+        }
+    }
+
+    impl ToSql for BytesMut {
+        fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
+            buf.put_slice(&self);
+            Ok(())
+        }
+    }
+
+    impl ToSql for Bytes {
+        fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
+            buf.put_slice(&self);
+            Ok(())
+        }
+    }
+
+    impl_sql_type!(Vec<u8>, 17, None);
+    impl_sql_type!(BytesMut, 17, None);
+    impl_sql_type!(Bytes, 17, None);
 }
