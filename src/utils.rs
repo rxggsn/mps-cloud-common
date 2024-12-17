@@ -123,11 +123,7 @@ pub mod conf {
         T: de::DeserializeOwned,
     {
         let path = get_env("MPS_CONFIG_PATH").unwrap_or("etc/config.yaml".to_string());
-        match tokio::fs::OpenOptions::new().read(true).open(path).await {
-            Ok(file) => from_yml_reader(file.into_std().await)
-                .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err)),
-            Err(err) => Err(err),
-        }
+        load_config_path(path).await
     }
 
     pub async fn load_config_path<T, P>(path: P) -> io::Result<T>
@@ -304,7 +300,7 @@ impl I64IdGenerator {
     }
 }
 
-pub fn num_cpus() -> usize{
+pub fn num_cpus() -> usize {
     num_cpus::get()
 }
 #[cfg(test)]

@@ -14,6 +14,8 @@ pub struct Json(serde_json::Value);
 pub struct Jsonb(Vec<u8>);
 pub struct Uuid(uuid::Uuid);
 pub struct Name(String);
+pub struct Text(String);
+pub struct Char(char);
 
 impl fmt::Display for UnexpectedNullError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -164,6 +166,8 @@ pub mod utf8 {
     impl_sql_type!(Jsonb, 3802, None);
     impl_sql_type!(Uuid, 2950, Some(16));
     impl_sql_type!(Name, 19, Some(64));
+    impl_sql_type!(Text, 25, None);
+    impl_sql_type!(Char, 18, Some(1));
 
     impl FromSql for String {
         fn from_sql(value: &[u8]) -> Result<Self> {
@@ -218,6 +222,7 @@ pub mod primitive {
     impl_sql_type!(f32, 700, Some(4));
     impl_sql_type!(f64, 701, Some(8));
     impl_sql_type!(u32, 26, Some(4));
+    impl_sql_type!(u8, 18, Some(1));
 
     impl ToSql for bool {
         fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
@@ -231,6 +236,8 @@ pub mod primitive {
     impl_to_sql!(i64, put_i64);
     impl_to_sql!(f64, put_f64);
     impl_to_sql!(f32, put_f32);
+    impl_to_sql!(u32, put_u32);
+    impl_to_sql!(u8, put_u8);
 
     impl FromSql for bool {
         fn from_sql(value: &[u8]) -> Result<Self> {
@@ -257,6 +264,26 @@ pub mod primitive {
             bytes
                 .read_i16::<NetworkEndian>()
                 .map_err(|e| Box::new(e) as Box<_>)
+        }
+    }
+
+    impl FromSql for u8 {
+        fn from_sql(value: &[u8]) -> Result<Self> {
+            let mut bytes = value;
+            if bytes.len() < 1 {
+                return emit_size_error(
+                    "Received less than 1 byte while decoding an u8. \
+                    Was an expression of a different type accidentally marked as SmallInt?",
+                );
+            }
+
+            if bytes.len() > 1 {
+                return emit_size_error(
+                    "Received more than 1 byte while decoding an u8. \
+                    Was an Integer expression accidentally marked as SmallInt?",
+                );
+            }
+            bytes.read_u8().map_err(|e| Box::new(e) as Box<_>)
         }
     }
 
@@ -470,11 +497,11 @@ pub mod binary {
 
     use super::*;
 
-    impl FromSql for Vec<u8> {
-        fn from_sql(value: &[u8]) -> Result<Self> {
-            Ok(value.to_vec())
-        }
-    }
+    // impl FromSql for Vec<u8> {
+    //     fn from_sql(value: &[u8]) -> Result<Self> {
+    //         Ok(value.to_vec())
+    //     }
+    // }
 
     impl<'a> SqlType for &'a [u8] {
         fn ty_oid() -> u32 {
@@ -489,12 +516,12 @@ pub mod binary {
         }
     }
 
-    impl ToSql for Vec<u8> {
-        fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
-            buf.put_slice(&self);
-            Ok(())
-        }
-    }
+    // impl ToSql for Vec<u8> {
+    //     fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
+    //         buf.put_slice(&self);
+    //         Ok(())
+    //     }
+    // }
 
     impl ToSql for BytesMut {
         fn to_sql(&self, buf: &mut BytesMut) -> Result<()> {
