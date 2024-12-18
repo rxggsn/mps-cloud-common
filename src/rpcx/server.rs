@@ -19,7 +19,7 @@ use super::RpcRequest;
 pub struct TlsConfig {
     pub cert_path: String,
     pub key_path: String,
-    pub client_ca_cert_path: String,
+    pub client_ca_cert_path: Option<String>,
 }
 
 const TRACE_FN: fn(&Request<()>) -> tracing::Span = |request| match (
@@ -88,14 +88,17 @@ where
     let cert = std::fs::read_to_string(&tls.cert_path).expect("read cert failed");
     let key = std::fs::read_to_string(&tls.key_path).expect("read key failed");
     let server_identity = Identity::from_pem(cert, key);
+    let client_cert = tls.client_ca_cert_path.as_ref().map(|client_cert| {
+        Certificate::from_pem(
+            std::fs::read_to_string(client_cert).expect("read client ca cert failed"),
+        )
+    });
 
-    let client_ca_cert =
-        std::fs::read_to_string(&tls.client_ca_cert_path).expect("read client ca cert failed");
-    let client_ca_cert = Certificate::from_pem(client_ca_cert);
+    let mut tls = ServerTlsConfig::new().identity(server_identity);
 
-    let tls = ServerTlsConfig::new()
-        .identity(server_identity)
-        .client_ca_root(client_ca_cert);
+    if let Some(client_cert) = client_cert {
+        tls = tls.client_ca_root(client_cert);
+    }
 
     tonic::transport::Server::builder()
         .timeout(Duration::from_secs(30))
