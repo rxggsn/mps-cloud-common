@@ -1,20 +1,26 @@
-use crate::utils::look_up;
+use std::{collections::HashSet, fmt};
+use std::str::FromStr;
+
 use futures::StreamExt;
+use http::Uri;
+use http::uri::InvalidUri;
 use k8s_openapi::api::core::v1::{Pod, PodStatus, Service};
 use kube::{
     api::{ListParams, WatchParams},
-    core::WatchEvent,
     Api,
+    core::WatchEvent,
 };
-use std::{collections::HashSet, fmt};
 use tokio::{
     io,
     sync::mpsc::{self, Sender},
 };
 use tonic::transport;
+use tonic::transport::{Certificate, ClientTlsConfig, Identity};
 use tower::discover::Change;
 
-use super::{client::ControlPlane, PodName, PodUid, DEFAULT_BUFFER_SIZE};
+use crate::utils::look_up;
+
+use super::{client::ControlPlane, DEFAULT_BUFFER_SIZE, PodName, PodUid};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Target {
@@ -34,6 +40,13 @@ pub enum Target {
         namespace: String,
         port: Option<u16>,
         service_name: String,
+    },
+    Tls {
+        hostname: String,
+        port: Option<u16>,
+        client_key: String,
+        server_root_ca_cert: String,
+        client_cert: String,
     },
     Unknown,
 }
@@ -111,6 +124,29 @@ impl Target {
                     .watch_pod_change(change_tx)
                     .await
                     .map(|_| ControlPlane::new_cluster(change_rx))
+            }
+            Target::Tls {
+                hostname,
+                port,
+                client_key,
+                server_root_ca_cert,
+                client_cert,
+            } => {
+                let server_root_ca_cert = Certificate::from_pem(server_root_ca_cert);
+                let client_identity = Identity::from_pem(client_cert, client_key);
+
+                let tls = ClientTlsConfig::new()
+                    .domain_name(hostname)
+                    .ca_certificate(server_root_ca_cert)
+                    .identity(client_identity);
+                let channel =
+                    transport::Endpoint::new(format!("http://{}:{}", hostname, port.unwrap_or(80)))
+                        .map_err(|err| TargetError::Transport(err))?
+                        .tls_config(tls)
+                        .map_err(|err| TargetError::Transport(err))?
+                        .connect_lazy();
+
+                Ok(ControlPlane::Single(channel))
             }
         }
     }
@@ -436,7 +472,7 @@ mod tests {
     use tonic::transport;
     use tower::discover::Change;
 
-    use crate::rpcx::{PodName, DEFAULT_BUFFER_SIZE};
+    use crate::rpcx::{DEFAULT_BUFFER_SIZE, PodName};
 
     use super::{parse_target, PodWatcher};
 
