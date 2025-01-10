@@ -44,9 +44,9 @@ pub enum Target {
     Tls {
         hostname: String,
         port: Option<u16>,
-        client_key: String,
-        server_root_ca_cert: String,
-        client_cert: String,
+        server_cert: String,
+        client_key: Option<String>,
+        client_cert: Option<String>,
     },
     Unknown,
 }
@@ -129,16 +129,20 @@ impl Target {
                 hostname,
                 port,
                 client_key,
-                server_root_ca_cert,
+                server_cert,
                 client_cert,
             } => {
-                let server_root_ca_cert = Certificate::from_pem(server_root_ca_cert);
-                let client_identity = Identity::from_pem(client_cert, client_key);
+                let server_root_ca_cert = Certificate::from_pem(server_cert);
 
-                let tls = ClientTlsConfig::new()
+                let mut tls = ClientTlsConfig::new()
                     .domain_name(hostname)
-                    .ca_certificate(server_root_ca_cert)
-                    .identity(client_identity);
+                    .ca_certificate(server_root_ca_cert);
+                if let (Some(client_key), Some(client_cert)) = (client_key, client_cert) {
+                    let client_cert = Certificate::from_pem(client_cert);
+                    let client_key = Identity::from_pem(client_key, client_cert);
+                    tls = tls.identity(client_key);
+                }
+
                 let channel =
                     transport::Endpoint::new(format!("http://{}:{}", hostname, port.unwrap_or(80)))
                         .map_err(|err| TargetError::Transport(err))?

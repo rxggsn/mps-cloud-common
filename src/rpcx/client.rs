@@ -4,8 +4,8 @@ use hyper::Body;
 use tokio::sync::mpsc::Receiver;
 use tonic::{
     body::BoxBody,
-    transport::{self, channel::ResponseFuture, Endpoint},
     Code,
+    transport::{self, channel::ResponseFuture, Endpoint},
 };
 use tower::discover::Change;
 use tower_service::Service;
@@ -93,4 +93,11 @@ impl ControlPlane {
             load_balancer: PodLoadBalancer::new(change_rx),
         }
     }
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ClientTlsConfig {
+    pub server_cert_path: String,
+    pub client_key_path: Option<String>,
+    pub client_cert_path: Option<String>,
 }
