@@ -56,7 +56,7 @@ sm2 = { version = "0.13.3", optional = true }
 sha2 = { version = "0.10", optional = true, features = ["oid"] }
 base64 = { version = "0.22.1", optional = true }
 tokio-stream = { version = "0.1.12", optional = true }
-diesel = { version = "2.2", features = ["postgres"], optional = true }
+diesel = { version = "2.2", features = ["postgres", "r2d2"], optional = true }
 diesel_migrations = { version = "2.2", optional = true }
 num_cpus = { version = "1.16.0" }
 aes-gcm = { version = "0.10", optional = true }
