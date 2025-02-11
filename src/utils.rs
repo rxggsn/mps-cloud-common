@@ -123,14 +123,10 @@ pub mod conf {
         T: de::DeserializeOwned,
     {
         let path = get_env("MPS_CONFIG_PATH").unwrap_or("etc/config.yaml".to_string());
-        match tokio::fs::OpenOptions::new().read(true).open(path).await {
-            Ok(file) => from_yml_reader(file.into_std().await)
-                .map_err(|err| io::Error::new(io::ErrorKind::InvalidData, err)),
-            Err(err) => Err(err),
-        }
+        load_config_from_path(path).await
     }
 
-    pub async fn load_config_path<T, P>(path: P) -> io::Result<T>
+    pub async fn load_config_from_path<T, P>(path: P) -> io::Result<T>
     where
         T: de::DeserializeOwned,
         P: AsRef<Path>,
@@ -304,19 +300,46 @@ impl I64IdGenerator {
     }
 }
 
-pub fn num_cpus() -> usize{
+pub fn num_cpus() -> usize {
     num_cpus::get()
+}
+
+pub fn edit_distance(s1: &str, s2: &str) -> usize {
+    let len1 = s1.chars().count();
+    let len2 = s2.chars().count();
+
+    let mut dp = vec![vec![0; len2 + 1]; len1 + 1];
+
+    for i in 0..=len1 {
+        dp[i][0] = i;
+    }
+
+    for j in 0..=len2 {
+        dp[0][j] = j;
+    }
+
+    for (i, c1) in s1.chars().enumerate() {
+        for (j, c2) in s2.chars().enumerate() {
+            dp[i + 1][j + 1] = if c1 == c2 {
+                dp[i][j]
+            } else {
+                dp[i][j].min(dp[i][j + 1].min(dp[i + 1][j])) + 1
+            }
+        }
+    }
+
+    dp[len1][len2]
 }
 #[cfg(test)]
 mod tests {
     use std::{env, thread};
 
     use crate::{
-        LOCAL_IP,
         utils::codec::{
             bcd_to_i32, bcd_to_u16, bcd_to_u32, bcd_to_u64, hex_to_i32, hex_to_u32, hex_to_u64,
             u64_to_hex,
         },
+        LOCAL_IP,
     };
 
     use super::{

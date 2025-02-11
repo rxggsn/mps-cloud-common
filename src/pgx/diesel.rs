@@ -1,24 +1,8 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
-use std::collections::BTreeMap;
-use std::sync::Mutex;
-
-use crossbeam_skiplist::SkipSet;
-use derive_new::new;
-use diesel::{Connection, ConnectionResult, PgConnection, r2d2, RunQueryDsl};
-use diesel::backend::Backend;
-use diesel::connection::{Instrumentation, LoadConnection, SimpleConnection, TransactionManager};
-use diesel::connection::InstrumentationEvent;
-use diesel::debug_query;
-use diesel::migration::{MigrationSource, MigrationVersion};
-use diesel::pg::Pg;
-use diesel::query_builder::QueryFragment;
-use diesel_migrations::MigrationHarness;
-use tokio::sync::oneshot;
-use tokio::sync::oneshot::Receiver;
+use diesel::{r2d2, PgConnection, RunQueryDsl};
 
 use crate::utils::num_cpus;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Pool {
     inner: r2d2::Pool<r2d2::ConnectionManager<PgConnection>>,
 }
@@ -106,11 +90,6 @@ pool_query_dsl!(load, Vec<U>);
 pool_query_dsl!(get_result, U);
 
 impl Pool {
-    fn new_connection(datasource: &str) -> PgConnection {
-        let mut connection = PgConnection::establish(datasource).expect("connect pg failed");
-        connection.set_instrumentation(handle_instrumentation_event);
-        connection
-    }
     fn get_active_conn(
         &self,
     ) -> Option<r2d2::PooledConnection<r2d2::ConnectionManager<PgConnection>>> {
@@ -123,33 +102,5 @@ impl Pool {
                 .map_err(|err| tracing::error!("get connection failed: {}", err))
                 .ok()
         }
-    }
-}
-
-fn handle_instrumentation_event(event: InstrumentationEvent<'_>) {
-    match event {
-        InstrumentationEvent::StartEstablishConnection { url, .. } => {
-            tracing::info!("start establish connection: {}", url);
-        }
-        InstrumentationEvent::FinishEstablishConnection { url, error, .. } => {
-            error.iter().for_each(|e| {
-                tracing::error!("finish establish connection: {} error: {}", url, e);
-            });
-        }
-        InstrumentationEvent::StartQuery { query, .. } => {
-            tracing::debug!("sql query: {}", query);
-        }
-        InstrumentationEvent::CacheQuery { sql, .. } => {
-            tracing::debug!("cached sql query: {}", sql);
-        }
-        InstrumentationEvent::FinishQuery { error, .. } => {
-            error.iter().for_each(|e| {
-                tracing::error!("finish sql query failed: {}", e);
-            });
-        }
-        InstrumentationEvent::BeginTransaction { .. } => {}
-        InstrumentationEvent::CommitTransaction { .. } => {}
-        InstrumentationEvent::RollbackTransaction { .. } => {}
-        _ => {}
     }
 }

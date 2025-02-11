@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use postgres_types::ToSql;
-use tokio::sync::oneshot::Receiver;
 use tokio::sync::RwLock;
 use tokio_postgres::{Config, NoTls, Row, Socket};
 use tokio_postgres::tls::NoTlsStream;

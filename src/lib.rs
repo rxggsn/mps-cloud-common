@@ -8,6 +8,8 @@ pub mod checksum;
 pub mod concurrency;
 #[cfg(feature = "crypto")]
 pub mod crypto;
+#[cfg(feature = "dbx")]
+pub mod dbx;
 #[cfg(feature = "elasticx")]
 pub mod elasticx;
 pub mod error;
@@ -25,8 +27,6 @@ pub mod rpcx;
 pub mod socketx;
 pub mod times;
 pub mod utils;
-#[cfg(feature = "dbx")]
-pub mod dbx;
 
 #[cfg(feature = "iox")]
 pub mod iox;
@@ -50,6 +50,12 @@ impl Env {
             "prod" => Some(Env::Prod),
             _ => None,
         }
+    }
+}
+
+impl Default for Env {
+    fn default() -> Self {
+        Env::Dev
     }
 }
 

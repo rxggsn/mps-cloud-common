@@ -1,16 +1,15 @@
-use std::{io, time::Duration};
 use std::io::Error;
 use std::net::SocketAddr;
 use std::pin::{pin, Pin};
 use std::task::{Context, Poll};
+use std::{io, time::Duration};
 
 use futures::executor::block_on;
-use futures::TryStreamExt;
+use redis::aio::MultiplexedConnection;
 use redis::{
     AsyncCommands, AsyncIter, ConnectionAddr, ConnectionInfo, FromRedisValue, IntoConnectionInfo,
     RedisError, ToRedisArgs,
 };
-use redis::aio::MultiplexedConnection;
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{lookup_host, TcpStream};
 
@@ -183,6 +182,26 @@ impl Redis {
         val: V,
     ) -> Result<bool, RedisError> {
         self.inner.set_nx(key, val).await
+    }
+
+    pub async fn set_ex<K: ToRedisArgs + Send + Sync, V: ToRedisArgs + Send + Sync>(
+        &mut self,
+        key: K,
+        val: V,
+        seconds: usize,
+    ) -> Result<(), RedisError> {
+        self.inner.set_ex(key, val, seconds).await
+    }
+
+    pub async fn incr<
+        K: ToRedisArgs + Send + Sync,
+        V: ToRedisArgs + FromRedisValue + Send + Sync,
+    >(
+        &mut self,
+        key: K,
+        delta: V,
+    ) -> Result<V, RedisError> {
+        self.inner.incr(key, delta).await
     }
 }
 

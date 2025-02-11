@@ -25,6 +25,13 @@ pub fn today_end_timestamp_secs() -> i64 {
         .unwrap_or_default()
 }
 
+pub fn to_local_datetime(timestamp: i64) -> chrono::DateTime<chrono::Local> {
+    let secs = timestamp / 1000;
+    let nanos = (timestamp % 1000) * 1_000_000;
+    let naive_date_time = chrono::NaiveDateTime::from_timestamp_opt(secs, nanos as u32).unwrap();
+    chrono::DateTime::from_utc(naive_date_time, *chrono::Local::now().offset())
+}
+
 #[cfg(test)]
 mod tests {
 
