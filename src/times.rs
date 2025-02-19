@@ -1,4 +1,5 @@
 pub const YEAR_SECONDS: u32 = 31536000;
+pub const CHRONO_DATE_TIME_FORMAT: &str = "%Y-%m-%d %H:%M:%S";
 
 // now timestamp, in millis
 pub fn now_timestamp() -> i64 {
