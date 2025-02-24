@@ -78,6 +78,7 @@ macro_rules! rand_number {
 rand_number!(i16, rand_i16);
 rand_number!(i64, rand_i64);
 rand_number!(i32, rand_i32);
+rand_number!(usize, rand_usize);
 
 pub mod conf {
     use std::{io, path::Path};
