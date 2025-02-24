@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     ffi::OsStr,
     net::{ToSocketAddrs, UdpSocket},
     sync::atomic::{AtomicI64, Ordering},
@@ -330,6 +331,27 @@ pub fn edit_distance(s1: &str, s2: &str) -> usize {
 
     dp[len1][len2]
 }
+
+pub fn replace_by_variables(origin: &str, variables: &HashMap<String, String>) -> String {
+    use regex::Regex;
+    const REGEX: &'static str = r"\$\{[^}]+\}";
+    let r = Regex::new(REGEX).expect("msg");
+    let mut new_string = origin.to_string();
+    r.captures_iter(origin).for_each(|captures| {
+        captures.iter().for_each(|cap| {
+            cap.iter().for_each(|matcher| {
+                let placeholder = matcher.as_str();
+                let placeholder = &placeholder[2..placeholder.len() - 1];
+
+                variables.get(placeholder).iter().for_each(|env_val| {
+                    new_string = new_string.replace(matcher.as_str(), env_val.as_str());
+                })
+            });
+        });
+    });
+    new_string
+}
+
 #[cfg(test)]
 mod tests {
     use std::{env, thread};
