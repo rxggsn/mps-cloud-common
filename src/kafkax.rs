@@ -88,6 +88,7 @@ pub struct KafkaConsumerBuilder {
     pub partition: Option<i32>,
     pub auto_offset_reset: Option<String>,
     pub max_topic_metadata_propagation_ms: Option<i32>,
+    pub client_id: Option<String>,
 }
 
 impl KafkaConsumerBuilder {
@@ -114,6 +115,13 @@ impl KafkaConsumerBuilder {
             }
             None => {}
         };
+
+        match self.client_id.as_ref() {
+            Some(client_id) => {
+                conf.set("client.id", client_id);
+            }
+            None => {}
+        }
 
         let consumer: StreamConsumer = conf.create().expect("Consumer creation failed");
 

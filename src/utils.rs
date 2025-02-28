@@ -333,6 +333,26 @@ pub fn edit_distance(s1: &str, s2: &str) -> usize {
     dp[len1][len2]
 }
 
+pub fn snowflake_next_id(node_id: i64, seq: &AtomicI64) -> i64 {
+    const UNUSED_BITS: i32 = 1; // Sign bit, Unused (always set to 0)
+    const NODE_ID_BITS: i32 = 10;
+    const SEQUENCE_BITS: i32 = 12;
+
+    const MAX_SEQUENCE: i64 = (1 << SEQUENCE_BITS) - 1;
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    let sequence = seq.fetch_add(1, Ordering::Release);
+    seq.store(sequence & MAX_SEQUENCE, Ordering::Release);
+
+    return (timestamp << (NODE_ID_BITS + SEQUENCE_BITS + UNUSED_BITS))
+        | (node_id << SEQUENCE_BITS)
+        | (sequence & MAX_SEQUENCE);
+}
+
 pub fn replace_by_variables(origin: &str, variables: &HashMap<String, String>) -> String {
     use regex::Regex;
     const REGEX: &'static str = r"\$\{[^}]+\}";
