@@ -62,12 +62,22 @@ num_cpus = { version = "1.16.0" }
 aes-gcm = { version = "0.10", optional = true }
 pkcs8 = { version = "0.10.2", optional = true }
 base64ct = { version = "1.6.0", optional = true }
+sqlx = { version = "0.8", features = [
+    "runtime-tokio",
+    "postgres",
+    "time",
+    "json",
+    "bigdecimal",
+    "uuid",
+    "chrono",
+], optional = true }
+bigdecimal = { version = "0.4.6", optional = true }
 
 [dependencies.uuid]
 version = "1.2.1"
 features = [
-    "v4", # Lets you generate random UUIDs
-    "fast-rng", # Use a faster (but still sufficiently random) RNG
+    "v4",                # Lets you generate random UUIDs
+    "fast-rng",          # Use a faster (but still sufficiently random) RNG
     "macro-diagnostics", # Enable better diagnostics for compile-time UUIDs
 ]
 
@@ -113,7 +123,7 @@ full = [
     "checksum",
     "concurrency",
     "dbx",
-    "iox"
+    "iox",
 ]
 default = ["futures"]
 crypto = [
@@ -127,7 +137,7 @@ crypto = [
     "base64",
     "aes-gcm",
     "pkcs8",
-    "base64ct"
+    "base64ct",
 ]
 checksum = ["crc"]
 concurrency = []
@@ -136,6 +146,8 @@ iox = ["tokio-stream", "futures"]
 rocksdb-enable = ["rocksdb"]
 sled-enable = ["sled"]
 diesel-enable = ["diesel", "diesel_migrations"]
+cache = []
+sqlx-enable = ["sqlx", "bigdecimal"]
 
 [dev-dependencies]
 tokio-stream = { version = "0.1.12" }

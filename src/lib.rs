@@ -27,6 +27,8 @@ pub mod rpcx;
 pub mod socketx;
 pub mod times;
 pub mod utils;
+#[cfg(feature = "cache")]
+pub mod cache;
 
 #[cfg(feature = "iox")]
 pub mod iox;

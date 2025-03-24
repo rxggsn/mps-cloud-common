@@ -31,6 +31,7 @@ async fn test_kafka_producer() {
         partition: None,
         auto_offset_reset: Some("beginning".to_string()),
         max_topic_metadata_propagation_ms: None,
+        client_id: None,
     };
 
     let consumer = builder.build();

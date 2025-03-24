@@ -44,6 +44,7 @@ macro_rules! pool_query_dsl {
     };
 }
 
+#[cfg(feature = "diesel-enable")]
 impl Pool {
     pub fn new(datasource: &str, max_num: usize) -> Self {
         let conn_manager = r2d2::ConnectionManager::<PgConnection>::new(datasource);
@@ -88,6 +89,7 @@ impl Pool {
 
 pool_query_dsl!(load, Vec<U>);
 pool_query_dsl!(get_result, U);
+pool_query_dsl!(get_results, Vec<U>);
 
 impl Pool {
     fn get_active_conn(

@@ -122,11 +122,11 @@ pub fn mutex<T>(mutex: &Mutex<T>) -> MutexGuard<T> {
 #[cfg(test)]
 mod tests {
 
+    use std::sync::Mutex;
     use std::{
         sync::{Arc, RwLock},
         thread,
     };
-    use std::sync::Mutex;
 
     #[test]
     fn test_read() {

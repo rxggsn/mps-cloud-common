@@ -1,30 +1,30 @@
 use std::fmt::{Debug, Display, Write};
 
 use aes::{
-    Aes128,
-    Aes256, cipher::{generic_array::GenericArray, KeyIvInit, StreamCipher, StreamCipherError},
+    cipher::{generic_array::GenericArray, KeyIvInit, StreamCipher, StreamCipherError},
+    Aes128, Aes256,
 };
 use aes_gcm_siv::aead;
 use aes_gcm_siv::aead::{Aead, AeadMut};
-use base64::Engine;
 use base64::prelude::BASE64_STANDARD;
+use base64::Engine;
 use derive_new::new;
 use rand::Rng;
-use rsa::{RsaPrivateKey, RsaPublicKey};
 use rsa::traits::PublicKeyParts;
+use rsa::{RsaPrivateKey, RsaPublicKey};
 
-use crate::ALPHABET;
 use crate::crypto::block_mode::{gcm, gcm_siv};
 use crate::utils::codec::hex_string_as_slice;
+use crate::ALPHABET;
 
 pub mod block_mode {
     pub mod gcm {
-        use aes::cipher::{
-            BlockCipher, BlockEncrypt, generic_array::GenericArray, KeySizeUser, typenum::U16,
-        };
         use aes::cipher::KeyInit;
-        use aes_gcm::aead::Aead;
+        use aes::cipher::{
+            generic_array::GenericArray, typenum::U16, BlockCipher, BlockEncrypt, KeySizeUser,
+        };
         use aes_gcm::aead::consts::U12;
+        use aes_gcm::aead::Aead;
         use aes_gcm::AesGcm;
 
         use crate::crypto::CryptoError;
@@ -56,10 +56,10 @@ pub mod block_mode {
     }
 
     pub mod gcm_siv {
-        use aes::cipher::{
-            BlockCipher, BlockEncrypt, generic_array::GenericArray, KeySizeUser, typenum::U16,
-        };
         use aes::cipher::KeyInit;
+        use aes::cipher::{
+            generic_array::GenericArray, typenum::U16, BlockCipher, BlockEncrypt, KeySizeUser,
+        };
         use aes_gcm_siv::{aead::Aead, AesGcmSiv, Nonce};
 
         use crate::crypto::CryptoError;
@@ -312,8 +312,8 @@ impl Crypto {
                 use rsa::pkcs8::DecodePrivateKey;
                 use rsa::{
                     pkcs1v15::SigningKey,
-                    RsaPrivateKey,
                     signature::{SignatureEncoding, Signer},
+                    RsaPrivateKey,
                 };
                 let private_key = RsaPrivateKey::from_pkcs8_pem(&private_key)
                     .map_err(|err| CryptoError::LoadKeyError(err.to_string()))?;
@@ -513,11 +513,11 @@ pub fn new_iv() -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use base64::Engine;
     use base64::prelude::BASE64_STANDARD;
+    use base64::Engine;
     use hex_literal::hex;
 
-    use super::{Crypto, CryptoStates, parse_rsa_public_key};
+    use super::{parse_rsa_public_key, Crypto, CryptoStates};
 
     #[test]
     fn test_aes128_ctr_crypto() {
@@ -652,6 +652,26 @@ mod tests {
         // println!("distid: {}", hex::encode(DIST_ID));
         assert!(crypto.check_sign(data, &actual_signature).expect(""));
     }
+
+    // #[test]
+    // fn test_aes256_decrypt() {
+    //     let key = "L2lRTi9rPnP2U36VopFPbedYglFDfoA0";
+    //     let iv = "sj77oa3vhzkp";
+    //     let ciphertext = "LjE7TlAx8r6K5dhjhGCcqY7T0189iiIxBP2uK3PBRu2bsiiDFiyylj3q+b4SiJpczw9XURe1Ck+XBqd1V5aarWCA6iQH5an6+YhZv/HUn5hjM2XnX7kFlele8BfHNvgMXZoSrNf5tEqVB/tcKuphPD0=";
+    //     let crypto = Crypto::AesGcm {
+    //         key: key.as_bytes().to_vec(),
+    //     };
+    //     let plaintext = CryptoStates::new(
+    //         iv.as_bytes().to_vec(),
+    //         &crypto,
+    //         &BASE64_STANDARD.decode(ciphertext).expect(""),
+    //     )
+    //     .decrypt()
+    //     .expect("");
+
+    //     let plaintext = String::from_utf8(plaintext.to_vec()).expect("");
+    //     assert_eq!(plaintext, "123456789abcdefghijk");
+    // }
 
     #[test]
     fn test_aes_gcm_crypto() {
