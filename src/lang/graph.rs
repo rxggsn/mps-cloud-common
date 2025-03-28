@@ -7,29 +7,28 @@ use super::vec::{map_self, map_self_mut};
 
 macro_rules! deep_transverse_from_apex {
     ($self:ident,$apex:ident,$group:ident,$operation:ident,$f:ident) => {
-        let mut visited = HashSet::new();
+        let mut visited: HashSet<u16> = HashSet::new();
         let mut candidates = Vec::new();
         candidates.push(*$apex);
-        while !candidates.is_empty() {
-            if let Some(current_id) = candidates.pop() {
-                if !visited.contains(&current_id) {
-                    if let Some(node) = $group.$operation(&current_id) {
-                        $f(node);
-                        visited.insert(current_id);
-                    }
+        while let Some(current_id) = candidates.pop() {
+            if let Some(adjacents) = $self.edges.get(&current_id) {
+                let mut filterd = adjacents
+                    .iter()
+                    .filter(|adjacent| !visited.contains(*adjacent))
+                    .peekable();
+                if filterd.peek().is_some() {
+                    candidates.push(current_id);
                 }
-                if let Some(adjacents) = $self.edges.get(&current_id) {
-                    let mut filterd = adjacents
-                        .iter()
-                        .filter(|adjacent| !visited.contains(*adjacent))
-                        .peekable();
-                    if filterd.peek().is_some() {
-                        candidates.push(current_id);
-                    }
-                    filterd.for_each(|id| {
-                        candidates.push(*id);
-                    });
-                };
+                filterd.for_each(|id| {
+                    candidates.push(*id);
+                });
+            }
+
+            if let Some(node) = $group.$operation(&current_id) {
+                if !visited.contains(&current_id) {
+                    $f(node);
+                    visited.insert(current_id);
+                }
             }
         }
     };
@@ -109,6 +108,7 @@ where
                 init = Default::default();
             }
             f(&mut init, node);
+
             if init.id() != node.id() {
                 init = node.clone();
             }
@@ -347,11 +347,15 @@ mod tests {
 
         let mut content = "".to_string();
         graph.deep_traverse_fold(|parent, current| {
+            if content != "" {
+                content.push_str("\nand\n");
+                content.push_str(&current.content);
+            } else {
+                content.push_str(&current.content);
+            }
             if !parent.content.is_empty() {
                 current.content = format!("{}\nand\n{}", parent.content, current.content);
             }
-
-            content = current.content.clone();
         });
         println!("{}", content);
         assert_eq!(content, "content_1\nand\ncontent_3\nand\ncontent_10\nand\ncontent_9\nand\ncontent_20\nand\ncontent_7\nand\ncontent_19\nand\ncontent_18\nand\ncontent_17\nand\ncontent_2\nand\ncontent_6\nand\ncontent_16\nand\ncontent_5\nand\ncontent_15\nand\ncontent_14\nand\ncontent_4\nand\ncontent_11\nand\ncontent_8\nand\ncontent_13\nand\ncontent_12");
