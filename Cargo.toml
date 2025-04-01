@@ -72,6 +72,8 @@ sqlx = { version = "0.8", features = [
     "chrono",
 ], optional = true }
 bigdecimal = { version = "0.4.6", optional = true }
+reqwest = { version = "0.11", features = ["json"],optional = true }
+pin-project-lite = { version = "0.2.16", optional = true }
 
 [dependencies.uuid]
 version = "1.2.1"
@@ -140,7 +142,7 @@ crypto = [
     "base64ct",
 ]
 checksum = ["crc"]
-concurrency = []
+concurrency = ["pin-project-lite"]
 dbx = []
 iox = ["tokio-stream", "futures"]
 rocksdb-enable = ["rocksdb"]

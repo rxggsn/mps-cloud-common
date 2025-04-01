@@ -1,16 +1,16 @@
-use std::fmt::{Debug, Display, Write};
+use std::fmt::{Debug, Display, Write as _};
 
 use aes::{
     cipher::{generic_array::GenericArray, KeyIvInit, StreamCipher, StreamCipherError},
     Aes128, Aes256,
 };
 use aes_gcm_siv::aead;
-use aes_gcm_siv::aead::{Aead, AeadMut};
+use aes_gcm_siv::aead::{Aead, AeadMut as _};
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use derive_new::new;
 use rand::Rng;
-use rsa::traits::PublicKeyParts;
+use rsa::traits::PublicKeyParts as _;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 
 use crate::crypto::block_mode::{gcm, gcm_siv};

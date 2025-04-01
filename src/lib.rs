@@ -74,3 +74,5 @@ thread_local! {
 }
 
 pub const ALPHABET: &str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+
+pub static KAFKA_BROKERS_ENV: &str = "KAFKA_BROKERS";

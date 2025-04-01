@@ -1,6 +1,10 @@
-use std::sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::{
+    fmt::Debug,
+    sync::{Mutex, MutexGuard, RwLock, RwLockReadGuard, RwLockWriteGuard},
+};
 
-use futures::{Future, FutureExt};
+use futures::{Future, FutureExt, Stream};
+use pin_project_lite::pin_project;
 use tokio::sync::watch::{Receiver, Ref};
 use tonic::async_trait;
 
@@ -117,6 +121,64 @@ pub fn mutex<T>(mutex: &Mutex<T>) -> MutexGuard<T> {
         mutex.clear_poison();
         e.into_inner()
     })
+}
+pin_project! {
+    /// A stream that delays the execution of a future until the stream is polled.
+    #[derive(Debug)]
+    #[must_use = "streams do nothing unless polled"]
+    pub struct DelayStream<T, E, S: Stream<Item = T>, F: Future<Output = Result<S,E>>> {
+        #[pin]
+        inner: F,
+        #[pin]
+        result: Option<S>,
+    }
+}
+
+pub fn delay_stream<T, E, S: Stream<Item = T>, F: Future<Output = Result<S, E>>>(
+    future: F,
+) -> DelayStream<T, E, S, F> {
+    DelayStream {
+        inner: future,
+        result: None,
+    }
+}
+
+impl<T, E, S, F> Stream for DelayStream<T, E, S, F>
+where
+    E: Debug,
+    S: Stream<Item = T>,
+    F: Future<Output = Result<S, E>>,
+{
+    type Item = T;
+
+    fn poll_next(
+        self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        let mut this = self.project();
+        if this.result.is_none() {
+            let inner = this.inner.as_mut();
+            match inner.poll(cx) {
+                std::task::Poll::Ready(Ok(result)) => {
+                    this.result.set(Some(result));
+                }
+                std::task::Poll::Ready(Err(err)) => {
+                    tracing::error!("delay stream error: {:?}", err);
+                    return std::task::Poll::Ready(None);
+                }
+                std::task::Poll::Pending => return std::task::Poll::Pending,
+            }
+        }
+        let result = this.result.as_mut().as_pin_mut();
+        match result {
+            Some(result) => match result.poll_next(cx) {
+                std::task::Poll::Ready(Some(item)) => std::task::Poll::Ready(Some(item)),
+                std::task::Poll::Ready(None) => std::task::Poll::Ready(None),
+                std::task::Poll::Pending => std::task::Poll::Pending,
+            },
+            None => std::task::Poll::Pending,
+        }
+    }
 }
 
 #[cfg(test)]

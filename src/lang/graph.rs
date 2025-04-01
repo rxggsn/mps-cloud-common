@@ -50,6 +50,13 @@ impl<N> Graph<N>
 where
     N: Node,
 {
+    pub fn new(nodes: Vec<N>, edges: HashMap<u16, Vec<u16>>) -> Self {
+        Self {
+            nodes,
+            edges,
+            apexes: vec![],
+        }
+    }
     pub fn has_adjacent(&self, id: u16) -> bool {
         self.edges.contains_key(&id)
     }
