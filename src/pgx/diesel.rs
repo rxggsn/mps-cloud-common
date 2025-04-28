@@ -1,4 +1,4 @@
-use diesel::{r2d2, PgConnection, RunQueryDsl};
+use diesel::{r2d2, sql_query, PgConnection, RunQueryDsl};
 
 use crate::utils::num_cpus;
 
@@ -80,6 +80,18 @@ impl Pool {
     {
         self.get_active_conn()
             .map(|mut connection| dsl.execute(&mut connection).map(|r| r))
+            .unwrap_or(Err(diesel::result::Error::DatabaseError(
+                diesel::result::DatabaseErrorKind::UnableToSendCommand,
+                Box::new("no active connection".to_string()),
+            )))
+    }
+
+    pub fn load_by_sql<'query, U>(&self, sql: &str) -> diesel::QueryResult<Vec<U>>
+    where
+        U: diesel::QueryableByName<diesel::pg::Pg> + 'static,
+    {
+        self.get_active_conn()
+            .map(|mut connection| sql_query(sql).load(&mut connection).map(|r| r))
             .unwrap_or(Err(diesel::result::Error::DatabaseError(
                 diesel::result::DatabaseErrorKind::UnableToSendCommand,
                 Box::new("no active connection".to_string()),
