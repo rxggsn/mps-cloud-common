@@ -44,6 +44,32 @@ macro_rules! pool_query_dsl {
     };
 }
 
+macro_rules! pool_query_dsl_opt {
+    ($query:ident,$name:ident,$ret_val:ty) => {
+        #[cfg(feature = "diesel-enable")]
+        impl Pool {
+            pub fn $query<'query, U, DSL>(&self, dsl: DSL) -> diesel::QueryResult<Option<$ret_val>>
+            where
+                DSL: diesel::query_dsl::LoadQuery<
+                        'query,
+                        r2d2::PooledConnection<r2d2::ConnectionManager<PgConnection>>,
+                        U,
+                    > + diesel::RunQueryDsl<
+                        r2d2::PooledConnection<r2d2::ConnectionManager<PgConnection>>,
+                    >,
+            {
+                use diesel::OptionalExtension;
+                self.get_active_conn()
+                    .map(|mut connection| dsl.$name(&mut connection).optional().map(|r| r))
+                    .unwrap_or(Err(diesel::result::Error::DatabaseError(
+                        diesel::result::DatabaseErrorKind::UnableToSendCommand,
+                        Box::new("no active connection".to_string()),
+                    )))
+            }
+        }
+    };
+}
+
 #[cfg(feature = "diesel-enable")]
 impl Pool {
     pub fn new(datasource: &str, max_num: usize) -> Self {
@@ -91,7 +117,15 @@ impl Pool {
         U: diesel::QueryableByName<diesel::pg::Pg> + 'static,
     {
         self.get_active_conn()
-            .map(|mut connection| sql_query(sql).load(&mut connection).map(|r| r))
+            .map(
+                |mut connection| match sql_query(sql).load(&mut connection) {
+                    Ok(v) => Ok(v),
+                    Err(e) => match e {
+                        diesel::result::Error::NotFound => Ok(vec![]),
+                        _ => Err(e),
+                    },
+                },
+            )
             .unwrap_or(Err(diesel::result::Error::DatabaseError(
                 diesel::result::DatabaseErrorKind::UnableToSendCommand,
                 Box::new("no active connection".to_string()),
@@ -102,6 +136,9 @@ impl Pool {
 pool_query_dsl!(load, Vec<U>);
 pool_query_dsl!(get_result, U);
 pool_query_dsl!(get_results, Vec<U>);
+pool_query_dsl_opt!(get_result_opt, get_result, U);
+pool_query_dsl_opt!(get_results_opt, get_results, Vec<U>);
+pool_query_dsl_opt!(load_opt, load, Vec<U>);
 
 impl Pool {
     fn get_active_conn(
