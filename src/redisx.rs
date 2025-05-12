@@ -1,5 +1,6 @@
 use std::io::Error;
 use std::net::SocketAddr;
+use std::num::NonZeroUsize;
 use std::pin::{pin, Pin};
 use std::task::{Context, Poll};
 use std::{io, time::Duration};
@@ -202,6 +203,40 @@ impl Redis {
         delta: V,
     ) -> Result<V, RedisError> {
         self.inner.incr(key, delta).await
+    }
+
+    pub async fn lrange<
+        K: ToRedisArgs + Send + Sync,
+        V: ToRedisArgs + FromRedisValue + Send + Sync,
+    >(
+        &mut self,
+        key: K,
+        start: isize,
+        end: isize,
+    ) -> Result<Option<Vec<V>>, RedisError> {
+        self.inner.lrange(key, start, end).await
+    }
+
+    pub async fn rpush<K: ToRedisArgs + Send + Sync, V: ToRedisArgs + Send + Sync>(
+        &mut self,
+        key: K,
+        val: V,
+    ) -> Result<usize, RedisError> {
+        self.inner.rpush(key, val).await
+    }
+
+    pub async fn rpop_back<K: ToRedisArgs + Send + Sync, V: FromRedisValue + Send + Sync>(
+        &mut self,
+        key: K,
+    ) -> Result<Option<V>, RedisError> {
+        self.inner.rpop(key, None).await
+    }
+
+    pub async fn llen<K: ToRedisArgs + Send + Sync>(
+        &mut self,
+        key: K,
+    ) -> Result<usize, RedisError> {
+        self.inner.llen(key).await
     }
 }
 
