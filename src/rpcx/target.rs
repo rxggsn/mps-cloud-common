@@ -306,10 +306,6 @@ impl<'a> PodWatcher<'a> {
             .map(|r| (r.0, r.1.unwrap()))
             .collect();
 
-        if endpoints.is_empty() {
-            return Err(TargetError::Unavailable);
-        }
-
         endpoints.iter().for_each(|(pod_name, endpoint)| {
             change_tx
                 .try_send(Change::Insert(pod_name.clone(), endpoint.clone()))
