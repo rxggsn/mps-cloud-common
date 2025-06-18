@@ -14,6 +14,8 @@ use redis::{
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::{lookup_host, TcpStream};
 
+pub type Pipeline = redis::Pipeline;
+
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct RedisConf {
     pub host: String,
@@ -43,6 +45,14 @@ pub struct Redis {
 }
 
 impl Redis {
+    pub async fn new(url: &str) -> Self {
+        let cli = redis::Client::open(url).expect("invalid redis url");
+        let inner = redis::aio::ConnectionManager::new(cli)
+            .await
+            .expect("connect redis failed");
+        Self { inner }
+    }
+
     pub async fn set<K: ToRedisArgs + Send + Sync, V: ToRedisArgs + Send + Sync>(
         &mut self,
         key: K,
@@ -237,6 +247,40 @@ impl Redis {
         key: K,
     ) -> Result<usize, RedisError> {
         self.inner.llen(key).await
+    }
+
+    pub async fn exists<K: ToRedisArgs + Send + Sync>(
+        &mut self,
+        key: K,
+    ) -> Result<bool, RedisError> {
+        self.inner.exists(key).await
+    }
+
+    pub async fn publish<K: ToRedisArgs + Send + Sync, V: ToRedisArgs + Send + Sync>(
+        &mut self,
+        channel: K,
+        message: V,
+    ) -> Result<i64, RedisError> {
+        self.inner.publish(channel, message).await
+    }
+
+    pub async fn lpush<K: ToRedisArgs + Send + Sync, V: ToRedisArgs + Send + Sync>(
+        &mut self,
+        key: K,
+        val: V,
+    ) -> Result<usize, RedisError> {
+        self.inner.lpush(key, val).await
+    }
+
+    pub fn pipeline() -> redis::Pipeline {
+        redis::pipe()
+    }
+
+    pub async fn execute_pipeline<T: FromRedisValue + Send + Sync>(
+        &mut self,
+        pipe: &redis::Pipeline,
+    ) -> Result<T, RedisError> {
+        pipe.query_async(&mut self.inner).await
     }
 }
 
