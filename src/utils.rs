@@ -382,6 +382,12 @@ pub mod json {
                 });
                 serde_json::Value::Object(a_map)
             }
+            (serde_json::Value::Object(mut a_map), serde_json::Value::Null) => {
+                serde_json::Value::Object(a_map)
+            }
+            (serde_json::Value::Null, serde_json::Value::Object(b_map)) => {
+                serde_json::Value::Object(b_map)
+            }
             (a, _) => a,
         }
     }
