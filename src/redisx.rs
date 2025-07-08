@@ -1,18 +1,8 @@
-use std::io::Error;
-use std::net::SocketAddr;
-use std::num::NonZeroUsize;
-use std::pin::{pin, Pin};
-use std::task::{Context, Poll};
-use std::{io, time::Duration};
 
-use futures::executor::block_on;
-use redis::aio::MultiplexedConnection;
 use redis::{
-    AsyncCommands, AsyncIter, ConnectionAddr, ConnectionInfo, FromRedisValue, IntoConnectionInfo,
-    RedisError, ToRedisArgs,
+    AsyncCommands, AsyncIter, ConnectionAddr, ConnectionInfo, FromRedisValue, RedisError,
+    ToRedisArgs,
 };
-use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
-use tokio::net::{lookup_host, TcpStream};
 
 pub type Pipeline = redis::Pipeline;
 
