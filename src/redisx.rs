@@ -1,4 +1,3 @@
-
 use redis::{
     AsyncCommands, AsyncIter, ConnectionAddr, ConnectionInfo, FromRedisValue, RedisError,
     ToRedisArgs,
@@ -32,15 +31,16 @@ impl Default for RedisConf {
 #[derive(Clone)]
 pub struct Redis {
     inner: redis::aio::ConnectionManager,
+    cli: redis::Client,
 }
 
 impl Redis {
     pub async fn new(url: &str) -> Self {
         let cli = redis::Client::open(url).expect("invalid redis url");
-        let inner = redis::aio::ConnectionManager::new(cli)
+        let inner = redis::aio::ConnectionManager::new(cli.clone())
             .await
             .expect("connect redis failed");
-        Self { inner }
+        Self { inner, cli }
     }
 
     pub async fn set<K: ToRedisArgs + Send + Sync, V: ToRedisArgs + Send + Sync>(
@@ -262,6 +262,10 @@ impl Redis {
         self.inner.lpush(key, val).await
     }
 
+    pub async fn pubsub(&mut self) -> Result<redis::aio::PubSub, RedisError> {
+        self.cli.get_async_pubsub().await
+    }
+
     pub fn pipeline() -> redis::Pipeline {
         redis::pipe()
     }
@@ -307,11 +311,11 @@ impl RedisConf {
                 protocol: Default::default(),
             },
         };
-        let conn = redis::Client::open(info)
-            .expect("create redis client failed")
+        let cli = redis::Client::open(info).expect("create redis client failed");
+        let conn = cli
             .get_connection_manager()
             .await
             .expect("get redis multiplexed connection failed");
-        Redis { inner: conn }
+        Redis { inner: conn, cli }
     }
 }
