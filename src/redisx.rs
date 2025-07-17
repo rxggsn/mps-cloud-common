@@ -262,7 +262,7 @@ impl Redis {
         self.inner.lpush(key, val).await
     }
 
-    pub async fn pubsub(&mut self) -> Result<redis::aio::PubSub, RedisError> {
+    pub async fn pubsub(&self) -> Result<redis::aio::PubSub, RedisError> {
         self.cli.get_async_pubsub().await
     }
 

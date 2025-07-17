@@ -388,6 +388,16 @@ pub mod json {
             (serde_json::Value::Null, serde_json::Value::Object(b_map)) => {
                 serde_json::Value::Object(b_map)
             }
+            (serde_json::Value::Array(mut a_arr), serde_json::Value::Array(b_arr)) => {
+                a_arr.extend(b_arr);
+                serde_json::Value::Array(a_arr)
+            }
+            (serde_json::Value::Null, serde_json::Value::Array(b_arr)) => {
+                serde_json::Value::Array(b_arr)
+            }
+            (serde_json::Value::Array(a_arr), serde_json::Value::Null) => {
+                serde_json::Value::Array(a_arr)
+            }
             (a, _) => a,
         }
     }

@@ -7,7 +7,7 @@ use super::vec::{map_self, map_self_mut};
 
 macro_rules! deep_transverse_from_apex {
     ($self:ident,$apex:ident,$group:ident,$operation:ident,$f:ident) => {
-        let mut visited: HashSet<u16> = HashSet::new();
+        let mut visited: HashSet<ID> = HashSet::new();
         let mut candidates = Vec::new();
         candidates.push(*$apex);
         while let Some(current_id) = candidates.pop() {
@@ -34,34 +34,37 @@ macro_rules! deep_transverse_from_apex {
     };
 }
 
-pub trait Node: serde::Serialize + serde::de::DeserializeOwned + Debug + Clone + Default {
-    fn id(&self) -> u16;
+pub trait Node<ID>: Debug + Clone + Default {
+    fn id(&self) -> ID;
 }
 
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
-pub struct Graph<N> {
-    pub nodes: Vec<N>,
-    pub edges: HashMap<u16, Vec<u16>>,
-    #[serde(skip)]
-    apexes: Vec<u16>,
-}
-
-impl<N> Graph<N>
+#[derive(Debug, Clone, Default)]
+pub struct Graph<N, ID>
 where
-    N: Node,
+    ID: Eq + std::hash::Hash + Clone + Debug,
 {
-    pub fn new(nodes: Vec<N>, edges: HashMap<u16, Vec<u16>>) -> Self {
+    pub nodes: Vec<N>,
+    pub edges: HashMap<ID, Vec<ID>>,
+    apexes: Vec<ID>,
+}
+
+impl<N, ID> Graph<N, ID>
+where
+    N: Node<ID>,
+    ID: PartialEq + Eq + std::hash::Hash + Clone + Copy + Debug + Ord,
+{
+    pub fn new(nodes: Vec<N>, edges: HashMap<ID, Vec<ID>>) -> Self {
         Self {
             nodes,
             edges,
             apexes: vec![],
         }
     }
-    pub fn has_adjacent(&self, id: u16) -> bool {
+    pub fn has_adjacent(&self, id: ID) -> bool {
         self.edges.contains_key(&id)
     }
 
-    pub fn get_adjacent_ids(&self, id: &u16) -> Option<&Vec<u16>> {
+    pub fn get_adjacent_ids(&self, id: &ID) -> Option<&Vec<ID>> {
         self.edges.get(id)
     }
 
@@ -85,7 +88,7 @@ where
         });
     }
 
-    pub fn get_graph_apexes(&self) -> Vec<u16> {
+    pub fn get_graph_apexes(&self) -> Vec<ID> {
         if self.apexes.is_empty() {
             let mut candidates = HashSet::new();
             self.edges.iter().for_each(|(id, adjacent)| {
@@ -122,14 +125,14 @@ where
         });
     }
 
-    pub fn list_nodes(&self, path: &[u16]) -> Vec<&N> {
+    pub fn list_nodes(&self, path: &[ID]) -> Vec<&N> {
         path.iter()
             .filter(|id| self.nodes.iter().find(|node| node.id() == **id).is_some())
             .map(|id| self.nodes.iter().find(|node| node.id() == *id).unwrap())
             .collect()
     }
 
-    pub fn deep_traverse_from_apex<F: FnMut(&N)>(&self, apex_id: u16, mut f: F) {
+    pub fn deep_traverse_from_apex<F: FnMut(&N)>(&self, apex_id: ID, mut f: F) {
         let ref group = map_self(&self.nodes, |node| node.id());
         let apex = &apex_id;
         deep_transverse_from_apex!(self, apex, group, get, f);
@@ -141,7 +144,7 @@ where
         });
     }
 
-    pub fn remove_nodes(&mut self, ids: &[u16]) {
+    pub fn remove_nodes(&mut self, ids: &[ID]) {
         let mut removed = HashSet::new();
         ids.iter().for_each(|id| {
             removed.insert(*id);
@@ -176,8 +179,112 @@ where
         }
     }
 
-    pub fn get_node_mut(&mut self, id: &u16) -> Option<&mut N> {
+    pub fn breadth_traverse<F: FnMut(&N)>(&self, mut f: F) {
+        let apexes = self.get_graph_apexes();
+        let mut queue = VecDeque::new();
+        let mut group = map_self(&self.nodes, |node| node.id());
+        apexes.iter().for_each(|apex| {
+            queue.push_back(*apex);
+        });
+
+        while let Some(id) = queue.pop_front() {
+            if let Some(node) = group.get(&id) {
+                f(*node);
+            }
+            if let Some(adjacents) = self.edges.get(&id) {
+                adjacents.iter().for_each(|adjacent| {
+                    queue.push_back(*adjacent);
+                });
+            }
+        }
+    }
+
+    pub fn get_node_mut(&mut self, id: &ID) -> Option<&mut N> {
         self.nodes.iter_mut().find(|node| node.id() == *id)
+    }
+}
+
+impl<N, ID> serde::Serialize for Graph<N, ID>
+where
+    N: serde::Serialize + Node<ID>,
+    ID: serde::Serialize + Eq + std::hash::Hash + Clone + Debug,
+{
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("QueryGraph", 2)?;
+        state.serialize_field("nodes", &self.nodes)?;
+        state.serialize_field("edges", &self.edges)?;
+        state.end()
+    }
+}
+
+impl<'de, N, ID> serde::Deserialize<'de> for Graph<N, ID>
+where
+    N: serde::Deserialize<'de> + Node<ID>,
+    ID: serde::Deserialize<'de> + Eq + std::hash::Hash + Clone + Debug + Copy + Ord,
+{
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        struct GraphVisitor<N, ID>(std::marker::PhantomData<(N, ID)>);
+        impl<N, ID> GraphVisitor<N, ID> {
+            fn new() -> Self {
+                GraphVisitor(std::marker::PhantomData)
+            }
+        }
+
+        impl<'de, N, ID> serde::de::Visitor<'de> for GraphVisitor<N, ID>
+        where
+            N: serde::Deserialize<'de> + Node<ID>,
+            ID: serde::Deserialize<'de> + Eq + std::hash::Hash + Clone + Debug + Copy + Ord,
+        {
+            type Value = Graph<N, ID>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+                formatter.write_str("struct Graph")
+            }
+
+            fn visit_map<V>(self, mut map: V) -> Result<Self::Value, V::Error>
+            where
+                V: serde::de::MapAccess<'de>,
+            {
+                let mut nodes: Option<Vec<N>> = None;
+                let mut edges: Option<HashMap<ID, Vec<ID>>> = None;
+                while let Some(key) = map.next_key::<&str>()? {
+                    match key {
+                        "nodes" => {
+                            if nodes.is_some() {
+                                return Err(serde::de::Error::duplicate_field("nodes"));
+                            }
+                            nodes = Some(map.next_value::<Vec<N>>()?);
+                        }
+                        "edges" => {
+                            if edges.is_some() {
+                                return Err(serde::de::Error::duplicate_field("edges"));
+                            }
+                            edges = Some(map.next_value::<HashMap<ID, Vec<ID>>>()?);
+                        }
+                        _ => {
+                            let _: serde::de::IgnoredAny = map.next_value()?;
+                        }
+                    }
+                }
+                let nodes = nodes.ok_or_else(|| serde::de::Error::missing_field("nodes"))?;
+                let edges = edges.ok_or_else(|| serde::de::Error::missing_field("edges"))?;
+                Ok(Graph::new(nodes, edges))
+            }
+        }
+
+        let mut state = deserializer.deserialize_struct(
+            "Graph",
+            &["nodes", "edges"],
+            GraphVisitor::<N, ID>::new(),
+        )?;
+        Ok(state)
     }
 }
 
@@ -191,13 +298,13 @@ mod tests {
         content: String,
     }
 
-    impl super::Node for TestNode {
+    impl super::Node<u16> for TestNode {
         fn id(&self) -> u16 {
             self.id
         }
     }
 
-    type TestGraph = super::Graph<TestNode>;
+    type TestGraph = super::Graph<TestNode, u16>;
     #[test]
     fn test_deep_traverse() {
         let mut graph = TestGraph::default();
