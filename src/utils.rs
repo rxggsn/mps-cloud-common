@@ -373,7 +373,7 @@ pub fn replace_by_variables(origin: &str, variables: &HashMap<String, String>) -
     new_string
 }
 
-pub mod json {
+pub mod jsonx {
     pub fn merge(a: serde_json::Value, b: serde_json::Value) -> serde_json::Value {
         match (a, b) {
             (serde_json::Value::Object(mut a_map), serde_json::Value::Object(b_map)) => {
