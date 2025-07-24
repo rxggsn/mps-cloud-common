@@ -80,7 +80,7 @@ impl KafkaProducer {
     }
 }
 
-#[derive(serde::Deserialize, Clone, Debug)]
+#[derive(serde::Deserialize, Clone, Debug, Default)]
 pub struct KafkaConsumerBuilder {
     pub brokers: String,
     pub group_id: Option<String>,
