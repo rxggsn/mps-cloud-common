@@ -133,6 +133,21 @@ impl KafkaConsumerBuilder {
     }
 }
 
+#[cfg(test)]
+impl Default for KafkaConsumerBuilder {
+    fn default() -> Self {
+        Self {
+            brokers: "localhost:9092".to_string(),
+            group_id: Some("default_group".to_string()),
+            topics: "default_topic".to_string(),
+            partition: None,
+            auto_offset_reset: Some("earliest".to_string()),
+            max_topic_metadata_propagation_ms: Some(1000),
+            client_id: Some("default_client".to_string()),
+        }
+    }
+}
+
 pub struct KafkaConsumer {
     inner: StreamConsumer,
 }
