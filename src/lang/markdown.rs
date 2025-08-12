@@ -1,14 +1,14 @@
 use std::fmt::Display;
 
-pub struct MarkdownTable<'a> {
-    headers: &'a [&'a str],
+pub struct MarkdownTable {
+    headers: Vec<String>,
     rows: Vec<Vec<String>>,
 }
 
-impl<'a> MarkdownTable<'a> {
-    pub fn new(headers: &'a [&'a str]) -> Self {
+impl MarkdownTable {
+    pub fn new<T: Display>(headers: &[T]) -> Self {
         Self {
-            headers,
+            headers: headers.iter().map(|h| h.to_string()).collect(),
             rows: Vec::new(),
         }
     }
@@ -17,9 +17,14 @@ impl<'a> MarkdownTable<'a> {
         self.rows.push(row);
         self
     }
+
+    pub fn with_rows(&mut self, vec: Vec<Vec<String>>) -> &mut Self {
+        self.rows.extend(vec);
+        self
+    }
 }
 
-impl<'a> Display for MarkdownTable<'a> {
+impl Display for MarkdownTable {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let header = self.headers.join(" | ");
         let header = format!("| {} |", header);

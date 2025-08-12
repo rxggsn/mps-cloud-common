@@ -1,0 +1,77 @@
+# Use the latest 2.1 version of CircleCI pipeline process engine.
+# See: https://circleci.com/docs/configuration-reference
+version: 2.1
+orbs:
+  jq: circleci/jq@3.0.2
+executors:
+  build:
+    docker:
+      - image: cimg/rust:1.84.0
+    resource_class: medium+
+
+# Define a job to be invoked later in a workflow.
+# See: https://circleci.com/docs/jobs-steps/#jobs-overview & https://circleci.com/docs/configuration-reference/#jobs
+jobs:
+  build:
+    executor: build
+    environment:
+      ENV: "cicd"
+
+    # Add steps to the job
+    # See: https://circleci.com/docs/jobs-steps/#steps-overview & https://circleci.com/docs/configuration-reference/#steps
+    steps:
+      # Checkout the code as the first step.
+      - checkout
+      - run:
+          name: "Set up SSH and Git"
+          command: |
+            mkdir -p ~/.ssh
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
+            echo $GIT_TOKEN
+            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf ssh://git@github.com/
+            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf git@github.com/
+            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf https://github.com/
+            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf git@github.com:
+            git submodule sync
+            git submodule update --init --recursive
+      - run:
+          name: "Check Mps Common"
+          command: "cargo c --all-features"
+  test:
+    executor: build
+    steps:
+      - checkout
+      - run:
+          name: "Set up SSH and Git"
+          command: |
+            mkdir -p ~/.ssh
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
+            echo $GIT_TOKEN
+            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf ssh://git@github.com/
+            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf git@github.com/
+            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf https://github.com/
+            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf git@github.com:
+            git submodule sync
+            git submodule update --init --recursive
+      - run:
+          name: "Test Mps Common"
+          command: "cargo test --all-features"
+
+# Orchestrate jobs using workflows
+# See: https://circleci.com/docs/workflows/ & https://circleci.com/docs/configuration-reference/#workflows
+workflows:
+  build-and-test-workflow: # This is the name of the workflow, feel free to change it to better match your workflow.
+    when:
+      or:
+        - equal: ["push", << pipeline.event.name >>] # This job will only run on the develop branch
+        - and:
+            - equal: ["pull_request", << pipeline.event.name >>] # This job will only run on the develop branch
+            - equal: ["opened", << pipeline.event.action >>] # and only if the pull request is open
+    # Inside the workflow, you define the jobs you want to run.
+    jobs:
+      - build:
+          context: ggsn
+      - test:
+          context: ggsn
+          requires:
+            - build

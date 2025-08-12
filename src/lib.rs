@@ -29,6 +29,8 @@ pub mod times;
 pub mod utils;
 #[cfg(feature = "cache")]
 pub mod cache;
+#[cfg(feature = "fsx")]
+pub mod fsx;
 
 #[cfg(feature = "iox")]
 pub mod iox;
