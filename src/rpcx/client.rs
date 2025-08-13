@@ -3,14 +3,14 @@ use http::header::HOST;
 use hyper::Body;
 use tokio::sync::mpsc::Receiver;
 use tonic::{
-    body::BoxBody,
-    transport::{self, channel::ResponseFuture, Endpoint},
     Code,
+    body::BoxBody,
+    transport::{self, Endpoint, channel::ResponseFuture},
 };
 use tower::discover::Change;
 use tower_service::Service;
 
-use super::{lb::PodLoadBalancer, PodName};
+use super::{PodName, lb::PodLoadBalancer};
 
 pub async fn retry_rpc<Req, Resp, RetryRpcFut>(
     req: &Req,
@@ -22,7 +22,7 @@ where
 {
     let mut retry_count = 0;
     loop {
-        match rpc(req.clone()).into_future().await {
+        match TryFutureExt::into_future(rpc(req.clone())).await {
             Ok(resp) => return Ok(resp),
             Err(e) => {
                 if e.code() != Code::Unknown || retry_count >= 3 {

@@ -416,11 +416,11 @@ mod tests {
     use std::{env, thread};
 
     use crate::{
+        LOCAL_IP,
         utils::codec::{
             bcd_to_i32, bcd_to_u16, bcd_to_u32, bcd_to_u64, hex_to_i32, hex_to_u32, hex_to_u64,
             u64_to_hex,
         },
-        LOCAL_IP,
     };
 
     use super::{
@@ -445,9 +445,9 @@ mod tests {
     #[test]
     fn test_replace_by_env() {
         let input = "{\"your_name\": \"${name}\", \"your_id\": ${id}, \"your_home\": \"${home}\"}";
-        env::set_var("name", "jason");
-        env::set_var("id", "1111");
-        env::set_var("home", "shanghai");
+        unsafe { env::set_var("name", "jason") };
+        unsafe { env::set_var("id", "1111") };
+        unsafe { env::set_var("home", "shanghai") };
         let result = replace_by_env(input);
 
         assert_eq!(
