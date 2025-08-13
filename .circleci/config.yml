@@ -12,7 +12,7 @@ executors:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: rxdomain
-      - image: cimg/redis:6.2.12-alpine
+      - image: cimg/redis:6.2.12
       - image: bitnami/zookeeper:3.8
         environment:
           ALLOW_ANONYMOUS_LOGIN: yes
