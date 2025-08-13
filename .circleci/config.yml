@@ -54,8 +54,11 @@ jobs:
             git submodule sync
             git submodule update --init --recursive
       - run:
+          name: "Install Dependencies"
+          command: "apt-get update && RUN apt install -y clang libpq5"
+      - run:
           name: "Test Mps Common"
-          command: "cargo test --all-features"
+          command: "chmod +x ./run_workflow.sh && ./run_workflow.sh"
 
 # Orchestrate jobs using workflows
 # See: https://circleci.com/docs/workflows/ & https://circleci.com/docs/configuration-reference/#workflows
