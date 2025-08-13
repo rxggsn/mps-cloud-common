@@ -12,33 +12,10 @@ executors:
 # Define a job to be invoked later in a workflow.
 # See: https://circleci.com/docs/jobs-steps/#jobs-overview & https://circleci.com/docs/configuration-reference/#jobs
 jobs:
-  build:
+  test:
     executor: build
     environment:
       ENV: "cicd"
-
-    # Add steps to the job
-    # See: https://circleci.com/docs/jobs-steps/#steps-overview & https://circleci.com/docs/configuration-reference/#steps
-    steps:
-      # Checkout the code as the first step.
-      - checkout
-      - run:
-          name: "Set up SSH and Git"
-          command: |
-            mkdir -p ~/.ssh
-            ssh-keyscan github.com >> ~/.ssh/known_hosts
-            echo $GIT_TOKEN
-            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf ssh://git@github.com/
-            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf git@github.com/
-            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf https://github.com/
-            git config --global --add url.https://x-access-token:$GIT_TOKEN@github.com/.insteadOf git@github.com:
-            git submodule sync
-            git submodule update --init --recursive
-      - run:
-          name: "Check Mps Common"
-          command: "cargo c --all-features"
-  test:
-    executor: build
     steps:
       - checkout
       - run:
@@ -55,7 +32,7 @@ jobs:
             git submodule update --init --recursive
       - run:
           name: "Install Dependencies"
-          command: "apt-get update && RUN apt install -y clang libpq5"
+          command: "apt-get update && apt install -y clang libpq5"
       - run:
           name: "Test Mps Common"
           command: "chmod +x ./run_workflow.sh && ./run_workflow.sh"
@@ -72,9 +49,5 @@ workflows:
             - equal: ["opened", << pipeline.event.action >>] # and only if the pull request is open
     # Inside the workflow, you define the jobs you want to run.
     jobs:
-      - build:
-          context: ggsn
       - test:
           context: ggsn
-          requires:
-            - build
