@@ -2,6 +2,8 @@ extern crate core;
 
 use std::cell::UnsafeCell;
 
+#[cfg(feature = "cache")]
+pub mod cache;
 #[cfg(feature = "checksum")]
 pub mod checksum;
 #[cfg(feature = "concurrency")]
@@ -13,6 +15,8 @@ pub mod dbx;
 #[cfg(feature = "elasticx")]
 pub mod elasticx;
 pub mod error;
+#[cfg(feature = "fsx")]
+pub mod fsx;
 #[cfg(feature = "kafkax")]
 pub mod kafkax;
 pub mod lang;
@@ -27,17 +31,14 @@ pub mod rpcx;
 pub mod socketx;
 pub mod times;
 pub mod utils;
-#[cfg(feature = "cache")]
-pub mod cache;
-#[cfg(feature = "fsx")]
-pub mod fsx;
 
 #[cfg(feature = "iox")]
 pub mod iox;
 mod tasks;
 
-#[derive(serde::Deserialize, Clone, PartialEq, Eq, Debug)]
+#[derive(serde::Deserialize, Clone, PartialEq, Eq, Debug, Default)]
 pub enum Env {
+    #[default]
     #[serde(rename(deserialize = "dev"))]
     Dev,
     #[serde(rename(deserialize = "test"))]
@@ -54,12 +55,6 @@ impl Env {
             "prod" => Some(Env::Prod),
             _ => None,
         }
-    }
-}
-
-impl Default for Env {
-    fn default() -> Self {
-        Env::Dev
     }
 }
 

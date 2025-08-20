@@ -46,6 +46,7 @@ where
     pub nodes: Vec<N>,
     pub edges: HashMap<ID, Vec<ID>>,
     apexes: Vec<ID>,
+    parents_map: HashMap<ID, ID>,
 }
 
 impl<N, ID> Graph<N, ID>
@@ -56,6 +57,14 @@ where
     pub fn new(nodes: Vec<N>, edges: HashMap<ID, Vec<ID>>) -> Self {
         Self {
             nodes,
+            parents_map: edges
+                .iter()
+                .flat_map(|(center_id, adjacent_ids)| {
+                    adjacent_ids
+                        .iter()
+                        .map(|adjacent_id| (*adjacent_id, *center_id))
+                })
+                .collect(),
             edges,
             apexes: vec![],
         }
@@ -201,6 +210,10 @@ where
 
     pub fn get_node_mut(&mut self, id: &ID) -> Option<&mut N> {
         self.nodes.iter_mut().find(|node| node.id() == *id)
+    }
+
+    pub fn get_parent(&self, id: &ID) -> Option<&ID> {
+        self.parents_map.get(id)
     }
 }
 
@@ -472,6 +485,9 @@ mod tests {
             }
         });
         println!("{}", content);
-        assert_eq!(content, "content_1\nand\ncontent_3\nand\ncontent_10\nand\ncontent_9\nand\ncontent_20\nand\ncontent_7\nand\ncontent_19\nand\ncontent_18\nand\ncontent_17\nand\ncontent_2\nand\ncontent_6\nand\ncontent_16\nand\ncontent_5\nand\ncontent_15\nand\ncontent_14\nand\ncontent_4\nand\ncontent_11\nand\ncontent_8\nand\ncontent_13\nand\ncontent_12");
+        assert_eq!(
+            content,
+            "content_1\nand\ncontent_3\nand\ncontent_10\nand\ncontent_9\nand\ncontent_20\nand\ncontent_7\nand\ncontent_19\nand\ncontent_18\nand\ncontent_17\nand\ncontent_2\nand\ncontent_6\nand\ncontent_16\nand\ncontent_5\nand\ncontent_15\nand\ncontent_14\nand\ncontent_4\nand\ncontent_11\nand\ncontent_8\nand\ncontent_13\nand\ncontent_12"
+        );
     }
 }

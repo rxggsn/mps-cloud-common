@@ -1,7 +1,4 @@
-use std::fs;
-
 use bytes::{Buf, BufMut};
-use futures::executor::block_on;
 
 pub trait FileSystem {
     fn read<B: BufMut>(&self, path: &str, buf: &mut B) -> std::io::Result<()>;
@@ -25,12 +22,14 @@ impl S3Builder {
     }
 }
 
-#[cfg(test)]
 impl Default for S3Builder {
     fn default() -> Self {
         Self {
-            bucket_name: "default-bucket".to_string(),
-            region: awsregion::Region::UsEast1,
+            bucket_name: "dhforce-ai".to_string(),
+            region: awsregion::Region::Custom {
+                region: "home".to_string(),
+                endpoint: "http://localhost:4000".to_string(),
+            },
             credentials: s3::creds::Credentials::anonymous()
                 .expect("Failed to create anonymous credentials"),
         }
