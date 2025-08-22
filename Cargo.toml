@@ -146,7 +146,7 @@ crypto = [
     "base64ct",
 ]
 checksum = ["crc"]
-concurrency = ["pin-project-lite"]
+concurrency = ["pin-project-lite", "redisx"]
 dbx = []
 iox = ["tokio-stream", "futures"]
 rocksdb-enable = ["rocksdb"]

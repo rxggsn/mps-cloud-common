@@ -8,6 +8,8 @@ use pin_project_lite::pin_project;
 use tokio::sync::watch::{Receiver, Ref};
 use tonic::async_trait;
 
+use crate::redisx;
+
 #[async_trait]
 pub trait Subscriber<T>: Sync + Send {
     async fn next(&self) -> Option<Ref<'_, T>>;
@@ -178,6 +180,28 @@ where
             },
             None => std::task::Poll::Pending,
         }
+    }
+}
+
+pub struct DLock<'a>(pub &'a redisx::Redis);
+
+impl<'a> DLock<'a> {
+    /// Try to acquire a distributed lock with a key and expiration (in seconds).
+    /// Returns the lock value (UUID) if successful, otherwise None.
+    pub async fn acquire_lock(&self, key: &str, expire_secs: usize) -> bool {
+        match self.0.clone().set_nx(key, &1).await {
+            Ok(true) => {
+                let _ = self.0.clone().expire(key, expire_secs).await;
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub async fn release_lock(&self, key: &str) -> bool {
+        let result = self.0.clone().del(key).await;
+
+        matches!(result, Ok(()))
     }
 }
 
