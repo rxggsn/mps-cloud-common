@@ -6,9 +6,15 @@ pub trait FileSystem {
 }
 
 #[derive(serde::Deserialize, Clone, Debug)]
+pub struct Region {
+    pub endpoint: String,
+    pub region: String,
+}
+
+#[derive(serde::Deserialize, Clone, Debug)]
 pub struct S3Builder {
     bucket_name: String,
-    region: awsregion::Region,
+    region: Region,
     credentials: s3::creds::Credentials,
 }
 
@@ -16,7 +22,10 @@ impl S3Builder {
     pub fn build(&self) -> std::io::Result<S3> {
         S3::new(
             &self.bucket_name,
-            self.region.clone(),
+            awsregion::Region::Custom {
+                endpoint: self.region.endpoint.clone(),
+                region: self.region.region.clone(),
+            },
             self.credentials.clone(),
         )
     }
@@ -26,7 +35,7 @@ impl Default for S3Builder {
     fn default() -> Self {
         Self {
             bucket_name: "dhforce-ai".to_string(),
-            region: awsregion::Region::Custom {
+            region: Region {
                 region: "home".to_string(),
                 endpoint: "http://localhost:4000".to_string(),
             },
