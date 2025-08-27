@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use bytes::{Buf, BufMut};
+use futures::executor::block_on;
 
 pub trait FileSystem {
     fn read<B: BufMut + Send>(
