@@ -417,7 +417,7 @@ pub fn base_64_encode(data: &[u8]) -> String {
 }
 
 pub fn base_64_decode(data: &str) -> Result<Vec<u8>, base64::DecodeError> {
-    BASE64_STANDARD.decode(data.as_bytes())
+    BASE64_STANDARD.decode(data)
 }
 
 pub fn new_rsa_key_pair(bit_size: usize) -> Result<KeyPair, CryptoError> {

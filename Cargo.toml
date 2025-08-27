@@ -76,7 +76,7 @@ sqlx = { version = "0.8", features = [
 bigdecimal = { version = "0.4.6", optional = true }
 reqwest = { version = "0.11", features = ["json"], optional = true }
 pin-project-lite = { version = "0.2.16", optional = true }
-rust-s3 = { version = "0.35.1", optional = true, features = ["blocking"] }
+rust-s3 = { version = "0.35.1", optional = true, features = ["with-tokio"] }
 aws-region = { version = "0.25.5", optional = true, features = ["serde"] }
 
 [dependencies.uuid]

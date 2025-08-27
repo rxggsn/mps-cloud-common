@@ -1,8 +1,19 @@
+use std::time::Duration;
+
 use bytes::{Buf, BufMut};
+use futures::executor::block_on;
 
 pub trait FileSystem {
-    fn read<B: BufMut>(&self, path: &str, buf: &mut B) -> std::io::Result<()>;
-    fn write<B: Buf>(&self, path: &str, data: B) -> std::io::Result<()>;
+    fn read<B: BufMut + Send>(
+        &self,
+        path: &str,
+        buf: &mut B,
+    ) -> impl Future<Output = std::io::Result<()>> + Send;
+    fn write<B: Buf + Send>(
+        &self,
+        path: &str,
+        data: B,
+    ) -> impl Future<Output = std::io::Result<()>> + Send;
 }
 
 #[derive(serde::Deserialize, Clone, Debug)]
@@ -58,55 +69,103 @@ impl S3 {
     ) -> std::io::Result<Self> {
         let bucket = s3::Bucket::new(bucket_name, region, credentials)
             .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        Ok(Self { bucket: *bucket })
+        Ok(Self {
+            bucket: *bucket
+                .with_request_timeout(Duration::from_secs(3))
+                .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?,
+        })
     }
 }
 impl FileSystem for S3 {
-    fn read<B: BufMut>(&self, path: &str, buf: &mut B) -> std::io::Result<()> {
-        let response_data = self
-            .bucket
-            .get_object_blocking(path)
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        if response_data.status_code() != 200 {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "S3 GET {} returned response {}",
-                    path,
-                    response_data
-                        .to_string()
-                        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?
-                ),
-            ));
+    fn read<B: BufMut + Send>(
+        &self,
+        path: &str,
+        buf: &mut B,
+    ) -> impl Future<Output = std::io::Result<()>> + Send {
+        async move {
+            let response_data = self
+                .bucket
+                .get_object(path)
+                .await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            if response_data.status_code() != 200 {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!(
+                        "S3 GET {} returned response {}",
+                        path,
+                        response_data
+                            .to_string()
+                            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?
+                    ),
+                ));
+            }
+            buf.put_slice(&response_data.into_bytes());
+            Ok(())
         }
-        buf.put_slice(&response_data.into_bytes());
-        Ok(())
     }
 
-    fn write<B: Buf>(&self, path: &str, mut data: B) -> std::io::Result<()> {
+    fn write<B: Buf + Send>(
+        &self,
+        path: &str,
+        mut data: B,
+    ) -> impl Future<Output = std::io::Result<()>> + Send {
         // while data.has_remaining() {
         //     let chunk = data.chunk();
         //     bytes.extend_from_slice(chunk);
         //     let len = chunk.len();
         //     data.advance(len);
         // }
-        let response_data = self
-            .bucket
-            .put_object_blocking(path, data.chunk())
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-        if !(response_data.status_code() >= 300) {
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!(
-                    "S3 PUT {} returned {}",
-                    path,
-                    response_data
-                        .to_string()
-                        .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?
-                ),
-            ));
+        async move {
+            let response_data = self
+                .bucket
+                .put_object(path, data.chunk())
+                .await
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            if (response_data.status_code() >= 300) {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    format!(
+                        "S3 PUT {} returned {}",
+                        path,
+                        response_data
+                            .to_string()
+                            .map_err(|err| std::io::Error::new(std::io::ErrorKind::Other, err))?
+                    ),
+                ));
+            }
+            Ok(())
         }
+    }
+}
 
-        Ok(())
+#[cfg(test)]
+mod tests {
+    use crate::fsx::{FileSystem as _, Region, S3Builder};
+
+    #[tokio::test]
+    async fn test_put_object() {
+        let builder = S3Builder {
+            bucket_name: "rxdomain-dev".to_string(),
+            region: Region {
+                region: "cn-hangzhou".to_string(),
+                endpoint: "oss-cn-hangzhou.aliyuncs.com".to_string(),
+            },
+            credentials: s3::creds::Credentials::new(
+                option_env!("ALIYUN_ACCESS_KEY_ID").map(|s| s.to_string()),
+                option_env!("ALIYUN_ACCESS_KEY_SECRET").map(|s| s.to_string()),
+                None,
+                None,
+                None,
+            )
+            .expect("msg"),
+        };
+
+        let s3driver = builder.build().expect("msg");
+
+        s3driver
+            .write("test/path/test.txt", "Hello, S3!".as_bytes())
+            .await
+            .expect("Failed to write object");
     }
 }
