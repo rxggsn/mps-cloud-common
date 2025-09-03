@@ -2,6 +2,7 @@ pub mod graph;
 pub mod markdown;
 pub mod slice;
 pub mod vec;
+pub mod csv;
 
 #[macro_export]
 macro_rules! impl_enum {
