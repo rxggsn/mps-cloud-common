@@ -60,6 +60,9 @@ pub struct S3 {
     bucket: s3::Bucket,
 }
 
+unsafe impl Send for S3 {}
+unsafe impl Sync for S3 {}
+
 impl S3 {
     fn new(
         bucket_name: &str,

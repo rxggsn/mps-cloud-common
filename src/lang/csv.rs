@@ -1,24 +1,24 @@
 use std::fmt;
 
-pub struct Csv<'a> {
-    pub headers: &'a [String],
-    pub rows: Vec<&'a Vec<String>>,
+pub struct Csv {
+    pub headers: Vec<String>,
+    pub rows: Vec<Vec<String>>,
 }
-impl<'a> Csv<'a> {
-    pub fn new(headers: &'a [String]) -> Self {
+impl Csv {
+    pub fn new(headers: &[String]) -> Self {
         Csv {
-            headers,
+            headers: headers.to_vec(),
             rows: Vec::new(),
         }
     }
 
-    pub fn add_row(&mut self, row: &'a Vec<String>) -> &mut Self {
+    pub fn add_row(&mut self, row: Vec<String>) -> &mut Self {
         self.rows.push(row);
         self
     }
 }
 
-impl<'a> fmt::Display for Csv<'a> {
+impl fmt::Display for Csv {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Write headers
         writeln!(f, "{}", self.headers.join(","))?;
