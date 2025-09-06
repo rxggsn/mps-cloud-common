@@ -1,10 +1,10 @@
 use std::time::Duration;
 
 use rdkafka::{
+    Message,
     consumer::{Consumer, StreamConsumer},
     error::KafkaError,
     producer::{FutureRecord, Producer},
-    Message,
 };
 
 const QUEUE_TIMEOUT: Duration = Duration::from_secs(3);
@@ -133,7 +133,6 @@ impl KafkaConsumerBuilder {
     }
 }
 
-#[cfg(test)]
 impl Default for KafkaConsumerBuilder {
     fn default() -> Self {
         Self {
