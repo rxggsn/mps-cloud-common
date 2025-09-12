@@ -124,7 +124,7 @@ impl FileSystem for S3 {
                 .put_object(path, data.chunk())
                 .await
                 .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
-            if (response_data.status_code() >= 300) {
+            if response_data.status_code() >= 300 {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Other,
                     format!(

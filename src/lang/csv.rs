@@ -16,6 +16,14 @@ impl Csv {
         self.rows.push(row);
         self
     }
+
+    pub fn add_rows<I>(&mut self, rows: I) -> &mut Self
+    where
+        I: IntoIterator<Item = Vec<String>>,
+    {
+        self.rows.extend(rows);
+        self
+    }
 }
 
 impl fmt::Display for Csv {

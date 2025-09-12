@@ -1,4 +1,4 @@
-use diesel::{r2d2, sql_query, PgConnection, RunQueryDsl};
+use diesel::{PgConnection, RunQueryDsl, r2d2, sql_query};
 
 use crate::utils::num_cpus;
 
