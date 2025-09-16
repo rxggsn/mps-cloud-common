@@ -154,8 +154,8 @@ mod tests {
                 endpoint: "oss-cn-hangzhou.aliyuncs.com".to_string(),
             },
             credentials: s3::creds::Credentials::new(
-                option_env!("ALIYUN_ACCESS_KEY_ID").map(|s| s.to_string()),
-                option_env!("ALIYUN_ACCESS_KEY_SECRET").map(|s| s.to_string()),
+                option_env!("ALICLOUD_ACCESS_KEY_ID").map(|s| s.to_string()),
+                option_env!("ALICLOUD_ACCESS_KEY_SECRET").map(|s| s.to_string()),
                 None,
                 None,
                 None,
