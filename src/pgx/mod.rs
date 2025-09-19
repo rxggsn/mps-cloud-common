@@ -64,6 +64,9 @@ pub fn stringify_column(col: &PgColumn, row: &PgRow) -> Result<String, sqlx::Err
             let raw_data = row.try_get_raw(col.ordinal())?;
             let bytes = raw_data.as_bytes().map_err(sqlx::Error::Decode)?;
             Ok(base64::encode(bytes))
+        } else if Type::UUID.oid() == id {
+            row.try_get::<uuid::Uuid, _>(col.ordinal())
+                .map(|val| val.to_string())
         } else {
             match col.type_info().kind() {
                 sqlx::postgres::PgTypeKind::Enum(enums) => {
@@ -92,33 +95,9 @@ mod tests {
     async fn test_stringify_column() {
         use sqlx::{Column, Row};
         tracing_subscriber::fmt::init();
-        const QUERY: &str = r#"WITH CHARGING_DATA AS
-	(SELECT STATION_NAME,
-			SCENE_TYPE,
-			COUNT(*) AS TOTAL_CHARGES,
-			AVG(CHARGED_END_TIME - CHARGED_START_TIME) AS AVG_CHARGING_DURATION,
-			AVG(CHARGED_POWER) AS AVG_CHARGED_POWER,
-			AVG(CHARGED_FEE) AS AVG_CHARGED_FEE,
-			AVG(SERVICE_FEE) AS AVG_SERVICE_FEE,
-			AVG(TOTAL_FEE) AS AVG_TOTAL_FEE,
-			AVG(QUEUE_DURATION) AS AVG_QUEUE_DURATION
-		FROM OPERATION_DATA
-		WHERE SCENE_TYPE IN ('高速服务区','商场')
-			AND DELETED = FALSE
-		GROUP BY STATION_NAME,
-			SCENE_TYPE)
-SELECT SCENE_TYPE,
-	AVG(TOTAL_CHARGES) AS AVG_TOTAL_CHARGES,
-	AVG(AVG_CHARGING_DURATION) AS AVG_CHARGING_DURATION,
-	AVG(AVG_CHARGED_POWER) AS AVG_CHARGED_POWER,
-	AVG(AVG_CHARGED_FEE) AS AVG_CHARGED_FEE,
-	AVG(AVG_SERVICE_FEE) AS AVG_SERVICE_FEE,
-	AVG(AVG_TOTAL_FEE) AS AVG_TOTAL_FEE,
-	AVG(AVG_QUEUE_DURATION) AS AVG_QUEUE_DURATION
-FROM CHARGING_DATA
-GROUP BY SCENE_TYPE"#;
+        const QUERY: &str = r#"SELECT coupon_type AS "优惠券类型", COUNT(*) AS "发放数量", SUM(redeem_amount) AS "累计抵扣金额", AVG(redeem_amount) AS "平均抵扣金额" FROM cac_redeem_extension WHERE redeem_type = 'REDEEM_OK' GROUP BY coupon_type"#;
         let pool = sqlx::PgPool::connect(
-            "postgres://postgres:postgres@localhost/dhforce_ai?sslmode=disable",
+            "postgresql://postgres:postgres@localhost/rxdomain_alpha?sslmode=disable",
         )
         .await
         .unwrap();
