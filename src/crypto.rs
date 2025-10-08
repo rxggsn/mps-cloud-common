@@ -1,31 +1,31 @@
 use std::fmt::{Debug, Display, Write as _};
 
 use aes::{
-    cipher::{generic_array::GenericArray, KeyIvInit, StreamCipher, StreamCipherError},
     Aes128, Aes256,
+    cipher::{KeyIvInit, StreamCipher, StreamCipherError, generic_array::GenericArray},
 };
 use aes_gcm_siv::aead;
 use aes_gcm_siv::aead::{Aead, AeadMut as _};
-use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
+use base64::prelude::BASE64_STANDARD;
 use derive_new::new;
 use rand::Rng;
 use rsa::traits::PublicKeyParts as _;
 use rsa::{RsaPrivateKey, RsaPublicKey};
 
+use crate::ALPHABET;
 use crate::crypto::block_mode::{gcm, gcm_siv};
 use crate::utils::codec::hex_string_as_slice;
-use crate::ALPHABET;
 
 pub mod block_mode {
     pub mod gcm {
         use aes::cipher::KeyInit;
         use aes::cipher::{
-            generic_array::GenericArray, typenum::U16, BlockCipher, BlockEncrypt, KeySizeUser,
+            BlockCipher, BlockEncrypt, KeySizeUser, generic_array::GenericArray, typenum::U16,
         };
-        use aes_gcm::aead::consts::U12;
-        use aes_gcm::aead::Aead;
         use aes_gcm::AesGcm;
+        use aes_gcm::aead::Aead;
+        use aes_gcm::aead::consts::U12;
 
         use crate::crypto::CryptoError;
 
@@ -58,9 +58,9 @@ pub mod block_mode {
     pub mod gcm_siv {
         use aes::cipher::KeyInit;
         use aes::cipher::{
-            generic_array::GenericArray, typenum::U16, BlockCipher, BlockEncrypt, KeySizeUser,
+            BlockCipher, BlockEncrypt, KeySizeUser, generic_array::GenericArray, typenum::U16,
         };
-        use aes_gcm_siv::{aead::Aead, AesGcmSiv, Nonce};
+        use aes_gcm_siv::{AesGcmSiv, Nonce, aead::Aead};
 
         use crate::crypto::CryptoError;
 
@@ -115,9 +115,10 @@ impl<'a> CryptoStates<'a> {
     }
 }
 
-#[derive(serde::Deserialize, Clone, Debug)]
+#[derive(serde::Deserialize, Clone, Debug, Default)]
 #[serde(tag = "type")]
 pub enum Crypto {
+    #[default]
     Unspecified,
     Aes128Ctr {
         key: String,
@@ -197,6 +198,7 @@ impl Crypto {
                     .map(|v| bytes::Bytes::from(v))
                     .map_err(|err| CryptoError::AEADCipherError(err))
             }
+            Self::Unspecified => Ok(bytes::Bytes::copy_from_slice(data)),
             _ => Err(CryptoError::CryptoNotSupportDecrypt),
         }
     }
@@ -311,9 +313,9 @@ impl Crypto {
             Crypto::RSA { private_key, .. } => {
                 use rsa::pkcs8::DecodePrivateKey;
                 use rsa::{
+                    RsaPrivateKey,
                     pkcs1v15::SigningKey,
                     signature::{SignatureEncoding, Signer},
-                    RsaPrivateKey,
                 };
                 let private_key = RsaPrivateKey::from_pkcs8_pem(&private_key)
                     .map_err(|err| CryptoError::LoadKeyError(err.to_string()))?;
@@ -325,8 +327,8 @@ impl Crypto {
                 account_id,
                 ..
             } => {
-                use sm2::dsa::signature::Signer;
                 use sm2::FieldBytes;
+                use sm2::dsa::signature::Signer;
 
                 let private_key = FieldBytes::from_slice(&private_key);
 
@@ -343,11 +345,11 @@ impl Crypto {
 
 pub mod sm4 {
     use aes::cipher::Key;
-    use aes_gcm::aead::consts::U12;
     use aes_gcm::AesGcm;
+    use aes_gcm::aead::consts::U12;
     use aes_gcm_siv::AesGcmSiv;
-    use sm4::cipher::KeyInit;
     use sm4::Sm4;
+    use sm4::cipher::KeyInit;
 
     pub fn new_gcm_siv(key: &[u8]) -> AesGcmSiv<Sm4> {
         AesGcmSiv::new(Key::<Sm4>::from_slice(key))
@@ -433,8 +435,8 @@ pub fn new_rsa_key_pair(bit_size: usize) -> Result<KeyPair, CryptoError> {
 
 pub fn new_sm2_key_pair() -> Result<KeyPair, CryptoError> {
     use sm2::{
-        pkcs8::{EncodePrivateKey, EncodePublicKey},
         SecretKey,
+        pkcs8::{EncodePrivateKey, EncodePublicKey},
     };
     let mut rng = rand::thread_rng();
     let key = SecretKey::random(&mut rng);
@@ -513,11 +515,11 @@ pub fn new_iv() -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
-    use base64::prelude::BASE64_STANDARD;
     use base64::Engine;
+    use base64::prelude::BASE64_STANDARD;
     use hex_literal::hex;
 
-    use super::{parse_rsa_public_key, Crypto, CryptoStates};
+    use super::{Crypto, CryptoStates, parse_rsa_public_key};
 
     #[test]
     fn test_aes128_ctr_crypto() {
@@ -625,14 +627,16 @@ mod tests {
             public_key,
         };
         let data = "123456789abcdefghijk".as_bytes();
-        assert!(crypto
-            .check_sign(
-                data,
-                &BASE64_STANDARD
-                    .decode(actual_signature.as_bytes())
-                    .expect("")
-            )
-            .expect(""));
+        assert!(
+            crypto
+                .check_sign(
+                    data,
+                    &BASE64_STANDARD
+                        .decode(actual_signature.as_bytes())
+                        .expect("")
+                )
+                .expect("")
+        );
     }
 
     #[test]

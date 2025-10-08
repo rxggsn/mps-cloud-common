@@ -28,6 +28,7 @@ pub mod pgx;
 pub mod redisx;
 #[cfg(feature = "rpcx")]
 pub mod rpcx;
+#[cfg(feature = "s3x")]
 pub mod socketx;
 pub mod times;
 pub mod utils;

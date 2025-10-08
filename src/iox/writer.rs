@@ -2,10 +2,14 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
 
-use tokio::io::{AsyncWrite, AsyncWriteExt};
-use tokio::net::tcp::OwnedWriteHalf;
-
+#[cfg(feature = "s3x")]
+use crate::socketx::ws_err_to_io;
 use crate::times::now_timestamp;
+use futures::stream::SplitSink;
+use tokio::io::{AsyncWrite, AsyncWriteExt};
+#[cfg(feature = "s3x")]
+use tokio::net::TcpStream;
+use tokio::net::tcp::OwnedWriteHalf;
 
 pub struct DelayedWriter<W: AsyncWrite> {
     delay: Duration,
@@ -65,6 +69,68 @@ impl AsyncWrite for TcpWriter {
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         let this = self.get_mut();
         Pin::new(&mut this.writer).poll_shutdown(cx)
+    }
+}
+
+#[cfg(feature = "s3x")]
+pub struct WsWriter {
+    sink: SplitSink<
+        tokio_tungstenite::WebSocketStream<TcpStream>,
+        tokio_tungstenite::tungstenite::Message,
+    >,
+}
+
+#[cfg(feature = "s3x")]
+impl WsWriter {
+    pub fn new(
+        sink: SplitSink<
+            tokio_tungstenite::WebSocketStream<TcpStream>,
+            tokio_tungstenite::tungstenite::Message,
+        >,
+    ) -> Self {
+        Self { sink }
+    }
+}
+
+#[cfg(feature = "s3x")]
+impl AsyncWrite for WsWriter {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<std::io::Result<usize>> {
+        use futures::Sink as _;
+        let this = self.get_mut();
+        let msg =
+            tokio_tungstenite::tungstenite::Message::binary(bytes::Bytes::copy_from_slice(buf));
+        match Pin::new(&mut this.sink).poll_ready(cx) {
+            Poll::Ready(Ok(())) => match Pin::new(&mut this.sink).start_send(msg) {
+                Ok(()) => Poll::Ready(Ok(buf.len())),
+                Err(err) => Poll::Ready(Err(ws_err_to_io(err))),
+            },
+            Poll::Ready(Err(err)) => Poll::Ready(Err(ws_err_to_io(err))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        use futures::Sink as _;
+        let this = self.get_mut();
+        match Pin::new(&mut this.sink).poll_flush(cx) {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+            Poll::Ready(Err(err)) => Poll::Ready(Err(ws_err_to_io(err))),
+            Poll::Pending => Poll::Pending,
+        }
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
+        use futures::Sink as _;
+        let this = self.get_mut();
+        match Pin::new(&mut this.sink).poll_close(cx) {
+            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+            Poll::Ready(Err(err)) => Poll::Ready(Err(ws_err_to_io(err))),
+            Poll::Pending => Poll::Pending,
+        }
     }
 }
 

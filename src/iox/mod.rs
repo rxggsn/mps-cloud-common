@@ -5,8 +5,18 @@ pub mod writer;
 
 pub struct DataPack {
     pub(crate) _start: usize,
-    pub(crate) end: usize,
+    pub(crate) _end: usize,
     pub data: bytes::Bytes,
+}
+
+impl DataPack {
+    pub fn new(data: bytes::Bytes) -> Self {
+        Self {
+            _start: 0,
+            _end: 0,
+            data,
+        }
+    }
 }
 
 fn merge_package(read_buf: &mut bytes::BytesMut, data_buf: &mut bytes::BytesMut) {
@@ -48,7 +58,7 @@ fn next_package(buf: &[u8], start_byte: u8, end_byte: u8) -> DataPack {
 
     DataPack {
         _start: start_idx,
-        end: end_idx,
+        _end: end_idx,
         data: bytes::Bytes::copy_from_slice(data),
     }
 }
@@ -56,7 +66,7 @@ fn next_package(buf: &[u8], start_byte: u8, end_byte: u8) -> DataPack {
 fn truncate_package(buf: &mut bytes::BytesMut, package: &DataPack) {
     let len = buf.len();
     buf.reverse();
-    buf.truncate(len - package.end);
+    buf.truncate(len - package._end);
     buf.reverse();
 }
 
@@ -86,7 +96,7 @@ mod tests {
         buf.put_slice(&[0x7c, 0x89, 0x72, 0x75, 0x79, 0xff, 0x3e]);
         let package = super::DataPack {
             _start: 0,
-            end: 4,
+            _end: 4,
             data: bytes::Bytes::new(),
         };
         truncate_package(buf, &package);
@@ -99,6 +109,6 @@ mod tests {
         buf.put_slice(&[0x7c, 0x89, 0x72, 0x75, 0x79, 0xff, 0x3e, 0x7c, 0x98, 0x97]);
         let package = next_package(buf, 0x7c, 0x7c);
         assert_eq!(package._start, 0);
-        assert_eq!(package.end, 8);
+        assert_eq!(package._end, 8);
     }
 }

@@ -78,6 +78,7 @@ reqwest = { version = "0.11", features = ["json"], optional = true }
 pin-project-lite = { version = "0.2.16", optional = true }
 rust-s3 = { version = "0.35.1", optional = true, features = ["with-tokio"] }
 aws-region = { version = "0.25.5", optional = true, features = ["serde"] }
+tokio-tungstenite = { version = "0.28.0", optional = true }
 
 [dependencies.uuid]
 version = "1.2.1"
@@ -146,7 +147,7 @@ crypto = [
     "base64ct",
 ]
 checksum = ["crc"]
-concurrency = ["pin-project-lite", "redisx"]
+concurrency = ["pin-project-lite", "redisx", "tokio-tungstenite"]
 dbx = []
 iox = ["tokio-stream", "futures"]
 rocksdb-enable = ["rocksdb"]
@@ -155,6 +156,7 @@ diesel-enable = ["diesel", "diesel_migrations"]
 cache = []
 sqlx-enable = ["sqlx", "bigdecimal"]
 fsx = ["rust-s3", "aws-region"]
+s3x = ["tokio-tungstenite"]
 
 [dev-dependencies]
 tokio-stream = { version = "0.1.12" }
