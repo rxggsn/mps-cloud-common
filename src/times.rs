@@ -51,16 +51,17 @@ pub fn get_all_weekdays(
             dates.push(current_date);
         }
         if current_date.weekday().number_from_monday() == weekdays[weekdays.len() - 1] as u32 {
-            // If it's Sunday, jump to next week
+            // If it's the last weekday, jump to next week
             current_date = current_date
-                .checked_add_signed(chrono::Duration::days(
-                    (weekdays[weekdays.len() - 1] - weekdays[0] + 1) as i64,
+                .checked_add_days(chrono::Days::new(
+                    (chrono::Weekday::Sun.number_from_monday() as i32
+                        - weekdays[weekdays.len() - 1]
+                        + weekdays[0]) as u64,
                 ))
                 .or_else(|| current_date.succ_opt())
                 .expect("");
-            continue;
         } else {
-            current_date = current_date.succ_opt().unwrap();
+            current_date = current_date.succ_opt().expect("");
         }
     }
     dates
@@ -104,17 +105,21 @@ mod tests {
 
     #[test]
     fn test_get_all_weekdays() {
+        tracing_subscriber::fmt::init();
         // Monday to Sunday: 1 to 7
         let weekdays = vec![1, 3, 5]; // Monday, Wednesday, Friday
         let start_date = NaiveDate::from_ymd_opt(2024, 6, 3).unwrap(); // Monday
-        let end_date = NaiveDate::from_ymd_opt(2024, 6, 9).unwrap(); // Sunday
+        let end_date = NaiveDate::from_ymd_opt(2024, 6, 16).unwrap(); // Sunday
 
         let result = get_all_weekdays(&weekdays, start_date, end_date);
 
         let expected = vec![
-            NaiveDate::from_ymd_opt(2024, 6, 3).unwrap(), // Monday
-            NaiveDate::from_ymd_opt(2024, 6, 5).unwrap(), // Wednesday
-            NaiveDate::from_ymd_opt(2024, 6, 7).unwrap(), // Friday
+            NaiveDate::from_ymd_opt(2024, 6, 3).unwrap(),  // Monday
+            NaiveDate::from_ymd_opt(2024, 6, 5).unwrap(),  // Wednesday
+            NaiveDate::from_ymd_opt(2024, 6, 7).unwrap(),  // Friday
+            NaiveDate::from_ymd_opt(2024, 6, 10).unwrap(), // Monday
+            NaiveDate::from_ymd_opt(2024, 6, 12).unwrap(), // Wednesday
+            NaiveDate::from_ymd_opt(2024, 6, 14).unwrap(), // Friday
         ];
 
         assert_eq!(result, expected);
@@ -126,21 +131,8 @@ mod tests {
         // Test with all weekdays
         let weekdays = vec![1, 2, 3, 4, 5, 6, 7];
         let result = get_all_weekdays(&weekdays, start_date, end_date);
-        let expected: Vec<_> = (0..7)
-            .map(|i| {
-                start_date
-                    .succ_opt()
-                    .unwrap()
-                    .checked_sub_signed(chrono::Duration::days(1))
-                    .unwrap()
-                    .succ_opt()
-                    .unwrap()
-                    .checked_add_signed(chrono::Duration::days(i))
-                    .unwrap()
-            })
-            .collect();
-        // Actually, just collect all days in the range
-        let expected: Vec<_> = (0..=6)
+        tracing::info!("result: {:?}", result);
+        let expected: Vec<_> = (0..=13)
             .map(|i| {
                 start_date
                     .checked_add_signed(chrono::Duration::days(i))
