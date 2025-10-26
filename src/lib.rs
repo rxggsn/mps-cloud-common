@@ -57,6 +57,11 @@ impl Env {
             _ => None,
         }
     }
+
+    pub fn get_env() -> Env {
+        let env_str = std::env::var("ENV").unwrap_or_else(|_| "dev".to_string());
+        Env::from_str(&env_str).unwrap_or(Env::Dev)
+    }
 }
 
 pub const LOG_TRACE_ID: &str = "X-Trace-Id";
