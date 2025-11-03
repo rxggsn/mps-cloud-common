@@ -263,6 +263,7 @@ impl Redis {
     }
 
     pub async fn pubsub(&self) -> Result<redis::aio::PubSub, RedisError> {
+        tracing::debug!("getting redis pubsub connection");
         self.cli.get_async_pubsub().await
     }
 
