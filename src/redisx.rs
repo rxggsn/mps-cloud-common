@@ -1,9 +1,17 @@
+use std::sync::Arc;
+
+use futures::TryFutureExt;
 use redis::{
-    AsyncCommands, AsyncIter, ConnectionAddr, ConnectionInfo, FromRedisValue, RedisError,
-    ToRedisArgs,
+    AsyncCommands, AsyncIter, ConnectionAddr, ConnectionInfo, FromRedisValue, PushInfo, RedisError,
+    ToRedisArgs, aio::ConnectionManagerConfig,
 };
+use tokio::sync::broadcast;
 
 pub type Pipeline = redis::Pipeline;
+pub type Error = RedisError;
+pub type PushKind = redis::PushKind;
+
+pub const PUSH_QUEUE_SIZE: usize = 1024;
 
 #[derive(serde::Deserialize, Clone, Debug)]
 pub struct RedisConf {
@@ -28,19 +36,51 @@ impl Default for RedisConf {
     }
 }
 
+pub struct PMessage {
+    pub channel: String,
+    pub value: String,
+}
+
+fn from_redis_value(val: &redis::Value) -> Result<String, RedisError> {
+    redis::from_redis_value(val)
+}
+
+pub fn parse_pmessage(msg: &PushInfo) -> Result<PMessage, RedisError> {
+    let data = msg
+        .data
+        .iter()
+        .map(|data| from_redis_value(data))
+        .collect::<Result<Vec<String>, RedisError>>()?;
+    let channel_name = data[1].clone();
+    let message = data[2].clone();
+    Ok(PMessage {
+        channel: channel_name,
+        value: message,
+    })
+}
+
 #[derive(Clone)]
 pub struct Redis {
     inner: redis::aio::ConnectionManager,
-    cli: redis::Client,
+    stream: Arc<broadcast::Receiver<PushInfo>>,
 }
 
 impl Redis {
     pub async fn new(url: &str) -> Self {
         let cli = redis::Client::open(url).expect("invalid redis url");
-        let inner = redis::aio::ConnectionManager::new(cli.clone())
-            .await
-            .expect("connect redis failed");
-        Self { inner, cli }
+        let (tx, rx) = broadcast::channel::<PushInfo>(PUSH_QUEUE_SIZE);
+        let inner = redis::aio::ConnectionManager::new_with_config(
+            cli,
+            ConnectionManagerConfig::new()
+                .set_push_sender(tx)
+                .set_automatic_resubscription(),
+        )
+        .await
+        .expect("connect redis failed");
+        Self {
+            inner,
+            stream: Arc::new(rx),
+        }
     }
 
     pub async fn set<K: ToRedisArgs + Send + Sync, V: ToRedisArgs + Send + Sync>(
@@ -262,11 +302,6 @@ impl Redis {
         self.inner.lpush(key, val).await
     }
 
-    pub async fn pubsub(&self) -> Result<redis::aio::PubSub, RedisError> {
-        tracing::debug!("getting redis pubsub connection");
-        self.cli.get_async_pubsub().await
-    }
-
     pub fn pipeline() -> redis::Pipeline {
         redis::pipe()
     }
@@ -276,6 +311,14 @@ impl Redis {
         pipe: &redis::Pipeline,
     ) -> Result<T, RedisError> {
         pipe.query_async(&mut self.inner).await
+    }
+
+    pub async fn psubscribe(
+        &mut self,
+        pattern: &str,
+    ) -> Result<broadcast::Receiver<PushInfo>, RedisError> {
+        self.inner.psubscribe(pattern).await?;
+        Ok(self.stream.resubscribe())
     }
 }
 
@@ -313,10 +356,19 @@ impl RedisConf {
             },
         };
         let cli = redis::Client::open(info).expect("create redis client failed");
-        let conn = cli
-            .get_connection_manager()
-            .await
-            .expect("get redis multiplexed connection failed");
-        Redis { inner: conn, cli }
+        let (tx, rx) = broadcast::channel::<PushInfo>(PUSH_QUEUE_SIZE);
+
+        let conn = redis::aio::ConnectionManager::new_with_config(
+            cli,
+            ConnectionManagerConfig::new()
+                .set_push_sender(tx)
+                .set_automatic_resubscription(),
+        )
+        .await
+        .expect("get redis multiplexed connection failed");
+        Redis {
+            inner: conn,
+            stream: Arc::new(rx),
+        }
     }
 }

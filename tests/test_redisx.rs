@@ -58,3 +58,45 @@ async fn test_redisx_hash_ops() {
         assert!(item.is_none());
     }
 }
+
+#[tokio::test]
+async fn test_redisx_pubsub() {
+    tracing_subscriber::fmt().init();
+    // let conf = redisx::RedisConf {
+    //     host: "localhost:6379".to_string(),
+    //     tls: false,
+    //     db: 0,
+    //     connect_timeout: 3,
+    //     username: None,
+    //     password: None,
+    // };
+    let mut redis = redisx::Redis::new("redis://localhost:6379/0?protocol=resp3").await;
+    let mut subscriber = redis.psubscribe("test_channel_*").await.unwrap();
+
+    let mut publisher = redisx::Redis::new("redis://localhost:6379/0?protocol=resp3").await;
+
+    let publish_task = tokio::spawn(async move {
+        for i in 0..5 {
+            let channel = format!("test_channel_{}", i % 2);
+            let message = format!("message_{}", i);
+            publisher.publish(&channel, &message).await.unwrap();
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+    });
+
+    let mut received_messages = vec![];
+    for _ in 0..5 {
+        if let Ok(msg) = subscriber.recv().await {
+            if msg.kind == redisx::PushKind::PMessage {
+                if let Ok(pmessage) = redisx::parse_pmessage(&msg) {
+                    received_messages.push((pmessage.channel, pmessage.value));
+                }
+            }
+        }
+    }
+
+    publish_task.await.unwrap();
+
+    tracing::info!("Received messages: {:?}", received_messages);
+    assert_eq!(received_messages.len(), 5);
+}
