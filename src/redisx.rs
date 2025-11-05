@@ -320,6 +320,15 @@ impl Redis {
         self.inner.psubscribe(pattern).await?;
         Ok(self.stream.resubscribe())
     }
+
+    pub async fn ltrim<K: ToRedisArgs + Send + Sync>(
+        &mut self,
+        key: K,
+        start: isize,
+        stop: isize,
+    ) -> Result<(), RedisError> {
+        self.inner.ltrim(key, start, stop).await
+    }
 }
 
 impl RedisConf {
