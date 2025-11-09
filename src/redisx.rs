@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{io, sync::Arc};
 
 use futures::TryFutureExt;
 use redis::{
@@ -62,7 +62,7 @@ pub fn parse_pmessage(msg: &PushInfo) -> Result<PMessage, RedisError> {
 #[derive(Clone)]
 pub struct Redis {
     inner: redis::aio::ConnectionManager,
-    stream: Arc<broadcast::Receiver<PushInfo>>,
+    stream: Option<Arc<broadcast::Receiver<PushInfo>>>,
 }
 
 impl Redis {
@@ -79,7 +79,7 @@ impl Redis {
         .expect("connect redis failed");
         Self {
             inner,
-            stream: Arc::new(rx),
+            stream: Some(Arc::new(rx)),
         }
     }
 
@@ -317,8 +317,15 @@ impl Redis {
         &mut self,
         pattern: &str,
     ) -> Result<broadcast::Receiver<PushInfo>, RedisError> {
-        self.inner.psubscribe(pattern).await?;
-        Ok(self.stream.resubscribe())
+        if let Some(stream) = &self.stream {
+            self.inner.psubscribe(pattern).await?;
+            Ok(stream.resubscribe())
+        } else {
+            Err(RedisError::from(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "pubsub not supported",
+            )))
+        }
     }
 
     pub async fn ltrim<K: ToRedisArgs + Send + Sync>(
@@ -365,19 +372,14 @@ impl RedisConf {
             },
         };
         let cli = redis::Client::open(info).expect("create redis client failed");
-        let (tx, rx) = broadcast::channel::<PushInfo>(PUSH_QUEUE_SIZE);
 
-        let conn = redis::aio::ConnectionManager::new_with_config(
-            cli,
-            ConnectionManagerConfig::new()
-                .set_push_sender(tx)
-                .set_automatic_resubscription(),
-        )
-        .await
-        .expect("get redis multiplexed connection failed");
+        let conn =
+            redis::aio::ConnectionManager::new_with_config(cli, ConnectionManagerConfig::new())
+                .await
+                .expect("get redis multiplexed connection failed");
         Redis {
             inner: conn,
-            stream: Arc::new(rx),
+            stream: None,
         }
     }
 }
