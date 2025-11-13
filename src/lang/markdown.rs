@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{collections::BTreeMap, fmt::Display};
 
 pub struct MarkdownTable {
     headers: Vec<String>,
@@ -21,6 +21,44 @@ impl MarkdownTable {
     pub fn with_rows(&mut self, vec: Vec<Vec<String>>) -> &mut Self {
         self.rows.extend(vec);
         self
+    }
+
+    pub fn parse(val: &str) -> Self {
+        let mut lines = val
+            .trim_start_matches("\n")
+            .trim_end_matches("\n")
+            .trim()
+            .lines();
+        let headers_line = lines.next().unwrap_or("");
+        let headers: Vec<String> = headers_line
+            .trim_matches('|')
+            .split('|')
+            .map(|s| s.trim().to_string())
+            .collect();
+
+        // Skip the separator line
+        lines.next();
+
+        let mut rows = Vec::new();
+        for line in lines {
+            let row: Vec<String> = line
+                .trim_matches('|')
+                .split('|')
+                .map(|s| s.trim().to_string())
+                .filter(|s| s != &"|".to_string() && !s.is_empty())
+                .collect();
+            rows.push(row);
+        }
+
+        Self { headers, rows }
+    }
+
+    pub fn headers(&self) -> &Vec<String> {
+        &self.headers
+    }
+
+    pub fn rows(&self) -> &Vec<Vec<String>> {
+        &self.rows
     }
 }
 
