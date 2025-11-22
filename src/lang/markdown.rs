@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, fmt::Display};
+use std::fmt::Display;
 
 pub struct MarkdownTable {
     headers: Vec<String>,
